@@ -1,0 +1,56 @@
+<Project>
+
+  <!-- 全仓库共享的编译约定;单个 csproj 只声明自己特有的东西。 -->
+  <PropertyGroup>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <!-- 版本。(XML 注释里不能出现连续两个减号,所以这里不画分隔线)
+       显式声明,不留给 SDK 默认值:未声明时 SDK 会静默填 1.0.0.0,与版本漂移
+       事故的症状长得一样,事后无法区分"没设"还是"设错了"。
+
+       这是【程序版本】,与 CHS-DRG 方案版本无关。方案版本(3.0)由
+       data/packs/<pack>/manifest.json 承担,经 /api/info 下发给界面。
+
+       显式赋值顺带堵死了版本漂移:MSBuild 先导入环境变量、后读项目文件,
+       这里的值会盖掉外部传入的 Version,所以调用方环境里的 VERSION /
+       VersionPrefix 不再能改变产物版本(见 scripts/pack-release.bat 头部
+       记录的那次事故:插件因此报到 3.0.0.0,全部绑定失败但退出码为 0)。
+  -->
+  <PropertyGroup>
+    <Version>1.0.0</Version>
+    <!--
+      AssemblyVersion 是插件绑定标识,单独锁住,不随产品版本升级。
+      宿主与插件必须报到同一个值才能绑上共享程序集,所以它只在破坏性 API
+      变更时才提升;补丁与功能版本走 Version(FileVersion/ProductVersion)。
+      改这个值 = 所有已编译插件同时作废,务必与插件一起重新构建。
+    -->
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+  </PropertyGroup>
+
+  <!-- CET 兼容开关(2026-09-14 落地,勿删)。
+       .NET 9 起 apphost 与 singlefilehost 都带 /CETCOMPAT 标记,进程一启动就启用
+       硬件强制影子栈。可 Windows 10 若没装齐累积更新,它的 ntdll 里 CET 实现有缺陷,
+       coreclr 会当场中止进程并打印:
+         Your Windows doesn't fully support CET. Please install all available Windows updates.
+       没有控制台时这句看不到,事件日志只留 exit code 0x80131506,现场表现就是
+       "双击没反应"。已实测:本包默认的 standalone exe 运行时
+       EnableUserShadowStack = 1,即确实踩在这条路上。
+
+       本包要发给不受控的客户机,不可能要求对方先把 Windows 补丁打齐,所以关掉
+       本程序自己的 CET 标记(CetCompat=false 只清掉 exe 里那一个字节,不改功能)。
+       代价仅是本进程失去硬件影子栈这层 ROP 防护,而本项目不与任何会改线程上下文的
+       原生库 interop,那层防护本来也拿不到收益。
+       两种形态都覆盖:apphost(fdd / build 态)与 singlefilehost(standalone 单文件)
+       都由 SDK 的 CreateAppHost 生成,同一个属性一起生效。
+       注意:改这个属性后必须清 obj 重编,否则 host 生成目标会因增量判定被跳过,
+       产物字节不变,看起来像"属性没生效"。 -->
+  <PropertyGroup>
+    <CetCompat>false</CetCompat>
+  </PropertyGroup>
+
+</Project>

@@ -1,0 +1,59 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <!-- 发布包对外的入口是 DRGX.exe,不是 DRGX.Host.exe。工程名与命名空间保持不变
+         (RootNamespace 取自工程名,代码里的 namespace DRGX.Host / using 都不受影响),
+         这里只改二进制名。AssemblyName 同时决定 apphost 的 exe 名与主程序集名,
+         所以产物是 DRGX.exe + DRGX.dll + DRGX.deps.json + DRGX.runtimeconfig.json;
+         与 DRGX.Fee.dll / DRGX.Text.dll 等同族文件不重名。 -->
+    <AssemblyName>DRGX</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 插件机制契约(IPlugin / IPluginRegistrar / PluginContext) -->
+    <ProjectReference Include="..\DRGX.Abstractions\DRGX.Abstractions.csproj" />
+    <ProjectReference Include="..\DRGX.Engine\DRGX.Engine.csproj" />
+    <!-- 费用契约/模型(独立于分组器):组合根按 DRG 码 join 权重/参考费用 -->
+    <ProjectReference Include="..\DRGX.Fee\DRGX.Fee.csproj" />
+    <!-- HIS 提取契约(独立于分组器与费用模块):宿主把 HisMedicalRecord 映射为引擎入参 -->
+    <ProjectReference Include="..\DRGX.His\DRGX.His.csproj" />
+    <!-- 共享文本工具(CSV / 编码回退) -->
+    <ProjectReference Include="..\DRGX.Text\DRGX.Text.csproj" />
+    <!-- xlsx 批量导入:Sylvan.Data.Excel(MIT)前向逐行读取首个工作表为字符串网格。
+         选它而非 ClosedXML / MiniExcel 是实测结论 —— 详见 BatchParsing.BatchLimits 的说明。 -->
+    <PackageReference Include="Sylvan.Data.Excel" Version="0.5.8" />
+  </ItemGroup>
+
+  <!--
+    裁剪(self-contained + PublishTrimmed)下保留插件依赖的框架程序集。
+
+    插件是**运行期**从 plugins\ 目录加载的独立程序集,不参与宿主的裁剪分析:trimmer
+    只看得见宿主自己的引用面,于是把宿主用不到、而插件要用的框架程序集类型裁掉。症状
+    极隐蔽 —— 插件照样"加载成功"(Register 路径不碰那些类型),直到**用到该类型的那一刻**
+    才抛 TypeLoadException,而且 ex.Message 常是**空串**(实测报成
+    「HIS 连接器加载失败(...): TypeLoadException: 」,极易误判成"配置文件坏了")。
+
+    实测(2026-09-14):
+      * 不保留               -> HIS 提取全废,连接器都建不起来;
+      * 只保留 System.Data.Common -> 连接器能建,但一执行 SQL 又在 new SqlConnection 炸;
+      * 保留完整闭包          -> 两轮对撞全部一致。
+
+    清单在 plugin-framework-roots.props,**由脚本自动生成,不要手改**;新增插件或插件
+    新增框架依赖后重跑:
+      dotnet run .workbuddy/plugin-framework-refs.cs artifacts/plugins -o src/DRGX.Host/plugin-framework-roots.props
+  -->
+  <Import Project="plugin-framework-roots.props" />
+
+  <!--
+    DRGX.Host — ASP.NET Core 宿主(组合根) + 原生前端
+
+    职责边界:
+      * 只做「参数解析 → 加载 → 组装 → 暴露端点 + 托管静态资源」,不含业务判定;
+      * 是唯一允许同时看见 Engine / Fee / His / Text 的地方;
+      * 插件装载:扫描 artifacts/plugins/ 下各插件目录,用 PluginLoadContext 加载,
+        契约程序集(DRGX.Abstractions / DRGX.Text / DRGX.Fee / DRGX.His)一律由默认上下文提供,
+        插件私有依赖(如 Microsoft.Data.SqlClient)才从插件目录解析。
+  -->
+
+</Project>

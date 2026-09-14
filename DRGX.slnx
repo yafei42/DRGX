@@ -1,0 +1,15 @@
+<Solution>
+  <!-- 核心(src/):按层分,依赖单向无环 -->
+  <Project Path="src/DRGX.Abstractions/DRGX.Abstractions.csproj" />
+  <Project Path="src/DRGX.Text/DRGX.Text.csproj" />
+  <Project Path="src/DRGX.Engine/DRGX.Engine.csproj" />
+  <Project Path="src/DRGX.Fee/DRGX.Fee.csproj" />
+  <Project Path="src/DRGX.His/DRGX.His.csproj" />
+  <Project Path="src/DRGX.Host/DRGX.Host.csproj" />
+
+  <!-- 插件(src/plugins/):构建产物输出到仓库根 plugins/,由宿主运行期用
+       AssemblyLoadContext 从该目录装载 -->
+  <Project Path="src/plugins/DRGX.Fee.PointValue/DRGX.Fee.PointValue.csproj" />
+  <Project Path="src/plugins/DRGX.Fee.DirectPayment/DRGX.Fee.DirectPayment.csproj" />
+  <Project Path="src/plugins/DRGX.His.SqlServer/DRGX.His.SqlServer.csproj" />
+</Solution>

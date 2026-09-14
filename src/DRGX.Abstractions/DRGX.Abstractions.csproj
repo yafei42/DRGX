@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <!--
+    DRGX.Abstractions — 插件机制契约（零依赖）
+
+    职责边界:
+      * 只定义"插件是什么、能登记什么、宿主给它什么上下文",不含任何能力契约;
+      * 能力契约由各自的能力程序集承载(DRGX.His 的 IHisConnector、
+        DRGX.Fee 的 IFeeAlgorithm),以免本程序集反向依赖它们而形成环;
+      * 零依赖:不引用 DRGX.Text / DRGX.Engine / DRGX.Fee / DRGX.His。
+
+    插件加载约定(关键):
+      本程序集与各能力契约程序集(DRGX.Text / DRGX.Fee / DRGX.His)属"共享程序集",
+      由默认 AssemblyLoadContext 提供。插件的 PluginLoadContext 遇到这些名字必须返回 null
+      交回默认上下文 —— 否则插件里的 IHisConnector 与宿主里的会是两个不同类型,
+      登记进去也解析不出来。
+  -->
+
+</Project>

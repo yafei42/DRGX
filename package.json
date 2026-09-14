@@ -1,0 +1,7 @@
+{
+  "name": "drgx",
+  "version": "1.0.0",
+  "private": true,
+  "description": "DRGX — CHS-DRG 3.0 分组引擎与地区支付测算（.NET 引擎 + 插件 + 原生前端 + 数据包）",
+  "license": "Apache-2.0"
+}

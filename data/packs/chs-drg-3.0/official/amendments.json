@@ -1,0 +1,51 @@
+{
+  "notes": "源工作簿（配置信息 xlsx）与权威 PDF（分组方案正式版）的已知差异登记。重新导入（tools/import-official-pack.py）与国标快照抽取（tools/national_extract.py）都读本文件，避免两处各写一份而再次分叉；每项均可从 PDF 独立复核（见 skill: chs-drg-pack-audit）。删除本文件会让两个工具立即 fail-fast，而不是静默丢弃补正。",
+  "exclusionSupplements": [
+    {
+      "setId": "EX_103",
+      "code": "P22.100",
+      "name": "新生儿短暂性呼吸急促",
+      "provenance": "PDF 表 6-5-103（p1753）；xlsx「排除表」sheet 缺此行"
+    },
+    {
+      "setId": "EX_103",
+      "code": "P24.100",
+      "name": "新生儿吸入羊水和黏液",
+      "provenance": "PDF 表 6-5-103（p1753）；xlsx「排除表」sheet 缺此行"
+    },
+    {
+      "setId": "EX_104",
+      "code": "P39.800",
+      "name": "特发于围生期的其他特指感染",
+      "provenance": "PDF 表 6-5-104（p1754）；xlsx「排除表」sheet 缺此行"
+    },
+    {
+      "setId": "EX_105",
+      "code": "P55.100",
+      "name": "胎儿和新生儿的ABO同种免疫",
+      "provenance": "PDF 表 6-5-105（p1755）；xlsx「排除表」sheet 缺此行"
+    },
+    {
+      "setId": "EX_105",
+      "code": "P59.900",
+      "name": "新生儿黄疸",
+      "provenance": "PDF 表 6-5-105（p1755）；xlsx「排除表」sheet 缺此行"
+    },
+    {
+      "setId": "EX_107",
+      "code": "P78.800",
+      "name": "围生期消化系统疾患，其他特指的",
+      "provenance": "PDF 表 6-5-107（p1756）；xlsx「排除表」sheet 缺此行"
+    },
+    {
+      "setId": "EX_128",
+      "code": "S02.400",
+      "name": "颧骨和上颌骨骨折",
+      "provenance": "PDF 表 6-5-128（p1782）；xlsx「排除表」sheet 缺此行"
+    }
+  ],
+  "nameCorrections": {
+    "T92.506": "陈旧性肱二头肌腱损伤"
+  },
+  "nameCorrectionsNotes": "上游字典错别字：PDF p1117/p1129/p1826 均为「腱」（肌腱），工作簿写作「建」。"
+}

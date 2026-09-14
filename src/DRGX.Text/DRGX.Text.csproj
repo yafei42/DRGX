@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!--
+    DRGX.Text — 跨模块共用的纯文本工具(CSV 解析 / XLSX 工作簿解析 / 编码回退)
+
+    职责边界:
+      * 只做「字符串/字节 → 结构化文本」这类无副作用转换;
+      * 例外:<see cref="FileText"/> 是全仓库**唯一**的「读文本文件」入口(读字节 + 解码)。
+        它存在的意义正是让编码回退无法被绕过 —— 详见该文件的说明。除它之外不做任何文件 IO;
+      * 零业务依赖:分组引擎、费用模块、插件与宿主都可引用,不引入循环依赖;
+      * 全仓库只此一份 CSV、XLSX 与编码回退实现,避免两处口径漂移;
+      * GBK/GB18030 提供程序(System.Text.Encoding.CodePages)在 .NET 10 已内置,无需引用包;
+      * XLSX 解析统一走 Sylvan.Data.Excel(MIT)—— 与宿主的批量导入同一套,全仓库只此一份口径
+        (宿主侧见 DRGX.Host.csproj;曾经这里是自研 ZipArchive+XmlReader,已删除)。
+
+    插件加载约定:本程序集由宿主与插件共享(AssemblyLoadContext 不得重复加载),
+    见 DRGX.Host 的 PluginLoadContext。Sylvan.Data.Excel 不在共享白名单内,
+    但插件不读 xlsx(只有引擎读官方工作簿),程序集按需解析,不会触发。
+  -->
+
+  <ItemGroup>
+    <!-- 与 DRGX.Host 同一版本:xlsx 解析口径全仓库只有这一个来源。 -->
+    <PackageReference Include="Sylvan.Data.Excel" Version="0.5.8" />
+  </ItemGroup>
+
+</Project>

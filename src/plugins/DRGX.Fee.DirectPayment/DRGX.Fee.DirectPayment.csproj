@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- 见 DRGX.Fee.PointValue.csproj 的说明:OutputPath 必须指向项目目录之外,
+         否则 DefaultItemExcludes 会排除掉本项目全部 .cs,编出空程序集。 -->
+    <OutputPath>$(MSBuildThisFileDirectory)..\..\..\artifacts\plugins\$(MSBuildProjectName)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 契约/共享程序集:只编译期引用,运行时由宿主默认上下文提供 -->
+    <ProjectReference Include="..\..\DRGX.Abstractions\DRGX.Abstractions.csproj" ExcludeAssets="runtime" Private="false" />
+    <ProjectReference Include="..\..\DRGX.Fee\DRGX.Fee.csproj" ExcludeAssets="runtime" Private="false" />
+    <ProjectReference Include="..\..\DRGX.Text\DRGX.Text.csproj" ExcludeAssets="runtime" Private="false" />
+  </ItemGroup>
+
+  <!--
+    DRGX.Fee.DirectPayment — 直付型(点数法/总额预付)费用算法插件
+
+    与点值法并列的另一种地区口径,同样实现 IFeeAlgorithm。
+    两者共用「等级系数」「病组标记」查询,但那些查询在 DRGX.Fee.RegionPack 上,
+    因此两个算法插件之间零依赖。
+  -->
+
+</Project>

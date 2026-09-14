@@ -1,0 +1,15 @@
+{
+  "_note": "示例模板(随发布包分发,程序不会读这个字段)。连接串里的 <HIS_HOST> 等是占位符,照抄连不上;下面的 sql 模板按 HealthOne 视图(vae1/VAO2/RAB1/BAK1 等)写了示例,本院库表不同就按实际情况改。用法:把本文件复制为 healthone-1.local.json 并改成实值,程序会自动启用(见 README.md 第 2 节)。不要在本文件里写真实口令 —— 它会随包发给别人。",
+  "kind": "his-connector-config",
+  "schemaVersion": 1,
+  "connector": "sqlserver-healthone",
+  "id": "healthone-1",
+  "connectionString": "Data Source=<HIS_HOST>;Initial Catalog=<HIS_DATABASE>;User Id=<HIS_USER>;Password=<HIS_PASSWORD>;TrustServerCertificate=true;Encrypt=False",
+  "commandTimeoutSeconds": 15,
+  "sql": {
+    "record": "DECLARE @vak08 NUMERIC SELECT @vak08 = vak08 FROM v_vak_full WHERE vaa07 = @id AND vak06 = 4 AND vak01a = 0 IF (@vak08 IS NOT NULL) SELECT vae01 id, vae94 inpatientNum, vae95 name, vae96 gender, CASE WHEN a.aau01 = 'Y' THEN vae46 ELSE NULL END age, vae87 ageDetail, CASE a.bdp02 WHEN '城乡居民' THEN '居民' WHEN '城镇职工' THEN '职工' WHEN '自费' THEN '自费' ELSE '其他' END insurType, vae90 weight, vae27 inHospitalTime, CASE WHEN abv01 IS NULL THEN 9 ELSE abv01 END leavingType, @vak08 fee FROM vae1 a WITH (NOLOCK) WHERE a.vae01 = @id ELSE SELECT vae01 id, vae94 inpatientNum, vae95 name, vae96 gender, CASE WHEN a.aau01 = 'Y' THEN vae46 ELSE NULL END age, vae87 ageDetail, CASE a.bdp02 WHEN '城乡居民' THEN '居民' WHEN '城镇职工' THEN '职工' WHEN '自费' THEN '自费' ELSE '其他' END insurType, vae90 weight, vae27 inHospitalTime, CASE WHEN abv01 IS NULL THEN 9 ELSE abv01 END leavingType, b.vbm05 fee FROM vae1 a WITH (NOLOCK) JOIN vbm2 b WITH (NOLOCK) ON a.vae01 = b.vaa07 AND a.vaa01 = b.VAA01 AND b.acf01 = 2 WHERE a.vae01 = @id",
+    "diagnoses": "SELECT b.BAK02 icd, b.BAK05 name, b.BAK24 yibao FROM VAO2 a WITH (NOLOCK) LEFT JOIN BAK1 b WITH (NOLOCK) ON a.BAK01A = b.BAK01 WHERE a.ACF01 = 3 AND a.VAO10 = 0 AND a.VAO11 = 3 AND a.VAA07 = @id ORDER BY a.VAO06",
+    "operations": "SELECT a.BAK02 icd, a.BAK05 name, h.BAK24 yibao FROM RAB1 a WITH (NOLOCK) LEFT JOIN BAK1 h WITH (NOLOCK) ON a.BAK02 = h.BAK02 AND h.bak17 >= GETDATE() WHERE a.VAA07 = @id ORDER BY a.ROWNR",
+    "list": "SELECT vae01 FROM vae1 WITH (NOLOCK) WHERE vae26 >= @from AND vae26 < DATEADD(DAY, 1, @to)"
+  }
+}

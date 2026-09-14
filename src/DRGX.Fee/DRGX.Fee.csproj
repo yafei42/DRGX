@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 共享文本工具(CSV / 编码回退):零业务依赖,不破坏本模块的独立性 -->
+    <ProjectReference Include="..\DRGX.Text\DRGX.Text.csproj" />
+  </ItemGroup>
+
+  <!--
+    DRGX.Fee — 费用算法契约 + 地区费用包模型
+
+    职责边界:
+      * 承载支付参数:权重(RW)/参考费用/地区算法参数;
+      * 零分组器引用:与分组器的唯一联系是 DRG 码字符串(组合根 join 键);
+      * 数据自校验:manifest(kind/schemaVersion/哈希) → weights.csv 校验和 → 行级校验,
+        任一契约不满足即抛 FeeWeightsException(fail-fast,绝不带病计费)。
+
+    与插件的关系(阶段二完成后):
+      * 本工程保留 IFeeAlgorithm / FeeEstimate* / RegionPack 等**契约与模型**;
+      * 具体算法(点值法 / 直付法)拆到 src/plugins/ 下,由宿主用 AssemblyLoadContext 装载;
+      * 本程序集因此是"共享契约",插件不得自带副本。
+  -->
+
+</Project>

@@ -1,0 +1,40 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- 构建产物输出到仓库根的 artifacts/plugins/<插件名>/,使该目录本身即宿主可直接装载的插件
+         (宿主约定:artifacts/plugins/<目录名>/<目录名>.dll 为入口程序集)。
+
+         ⚠ OutputPath 必须指向项目目录**之外**。若指向项目目录自身,MSBuild 的
+         DefaultItemExcludes 会包含 $(OutputPath)**,把本项目所有 .cs 一并排除,
+         编出一个零类型定义的空程序集 —— 不报任何错,只在运行期表现为
+         "插件加载成功但没有 IPlugin 类型"。此坑已踩过,勿改回。 -->
+    <OutputPath>$(MSBuildThisFileDirectory)..\..\..\artifacts\plugins\$(MSBuildProjectName)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <!-- 插件必须自带依赖:类库默认 CopyLocalLockFileAssemblies=false,会把 NuGet 依赖留在别处 -->
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 契约/共享程序集:只编译期引用,不复制到插件输出(Private=false)。
+         运行时由宿主的默认 AssemblyLoadContext 提供 —— 否则插件里的 IFeeAlgorithm
+         与宿主里的会是两个不同类型,登记后解析不出来。
+         Private 不沿项目引用传递,故 DRGX.Text 需单独抑制。 -->
+    <ProjectReference Include="..\..\DRGX.Abstractions\DRGX.Abstractions.csproj" ExcludeAssets="runtime" Private="false" />
+    <ProjectReference Include="..\..\DRGX.Fee\DRGX.Fee.csproj" ExcludeAssets="runtime" Private="false" />
+    <ProjectReference Include="..\..\DRGX.Text\DRGX.Text.csproj" ExcludeAssets="runtime" Private="false" />
+  </ItemGroup>
+
+  <!--
+    DRGX.Fee.PointValue — 点值法费用算法插件
+
+    实现 IFeeAlgorithm,由宿主从 artifacts/plugins/ 目录用 AssemblyLoadContext 装载。
+    新增地区算法 = 新增一个这样的插件工程,宿主与数据格式均不动。
+  -->
+
+</Project>

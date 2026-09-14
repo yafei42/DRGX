@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <!--
+    DRGX.His — HIS 病案提取契约
+
+    职责边界:
+      * 只承载"从 HIS 取病历"这一件事:契约 + 中立结果类型(HisMedicalRecord),
+        唯一的提取实现在插件 src/plugins/DRGX.His.SqlServer;
+      * 零分组器引用:与分组器的唯一联系是宿主层(DRGX.Host)把 HisMedicalRecord 映射为引擎入参;
+      * 换 HIS = 换插件,宿主与本工程零改动。
+
+    ⚠ 硬约束:本工程**不得引用任何数据库驱动**。
+      这里只有 IHisConnector / HisMedicalRecord / HisConnectorException 三个契约类型,
+      没有一处用到 SqlClient。驱动由插件自带并声明 —— 否则会经 Host → DRGX.His 传递,
+      让宿主为每种 HIS 都背上数据库驱动(实测 SqlClient + Azure.Identity + MSAL 共 12 个 DLL / 约 3.4MB)。
+      新增提取实现请在 src/plugins/ 下新建插件工程,不要往这里加 PackageReference。
+  -->
+
+</Project>

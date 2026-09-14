@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DRGX.Text\DRGX.Text.csproj" />
+  </ItemGroup>
+
+  <!--
+    DRGX.Engine — CHS-DRG 分组引擎(方案实现,不含宿主与费用)
+
+    职责边界:
+      * 只做「病案 → DRG 分组判定」:数据包读取、官方配置表编译、条件判定、判定轨迹;
+      * 只依赖 DRGX.Text;对费用、HIS、Web 零引用(依赖单向,无环);
+      * 无状态、可并行:GrouperEngine 不持有可变状态,DataPack 加载后只读;
+      * 不知道"插件"的存在,也不参与插件加载 —— 分组算法本身不是插件点。
+  -->
+
+</Project>

@@ -1,0 +1,51 @@
+# 行尾约定
+#
+# 批处理必须是 CRLF:cmd.exe 在 LF-only 的 .bat 上会**错位解析**——
+# 表现为 `'cher' is not recognized`、`set` 变量为空、goto 跳到错位置,
+# 且失败方式随行长与内容变化,极难与"文件内容看起来完全正确"对上号。
+# 曾在 start-web.bat 上真实踩到(编辑器/工具重写文件时把 CRLF 规整成了 LF)。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# 其余文本统一 LF 入库
+*.cs       text eol=lf
+*.csproj   text eol=lf
+*.props    text eol=lf
+*.slnx     text eol=lf
+*.json     text eol=lf
+*.js       text eol=lf
+*.mjs      text eol=lf
+*.css      text eol=lf
+*.html     text eol=lf
+*.md       text eol=lf
+*.csv      text eol=lf
+*.svg      text eol=lf
+*.txt      text eol=lf
+*.editorconfig text eol=lf
+.gitignore text eol=lf
+.gitattributes text eol=lf
+
+# 无扩展名的仓库级文本。本机 core.autocrlf=true,不显式规定的话这两个文件
+# 会走隐式转换(入库 LF / 检出 CRLF),跨平台协作时表现不一致。
+NOTICE     text eol=lf
+LICENSE    text eol=lf
+
+# 二进制,不做行尾转换
+#
+# 字体与预压缩资源必须显式声明:本机 core.autocrlf=true,而未声明的文件走
+# "像不像文本"的启发式判定——.br/.gz/.woff2 若在前 8000 字节里没撞上 NUL,
+# 就会被当成文本做 CRLF->LF 改写,**文件直接损坏**(且 git 不报错)。
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary
+*.xlsx binary
+*.dll binary
+*.pdb binary
+*.woff2 binary
+*.woff binary
+*.ttf binary
+*.otf binary
+*.br binary
+*.gz binary
+*.zip binary

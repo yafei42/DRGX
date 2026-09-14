@@ -1,0 +1,65 @@
+# ============================================================================
+#  DRGX 忽略规则
+#  目的之一:保证真实 HIS 连接串永不入库 —— scripts/start-web.bat 约定凭据只放
+#  configs/his/*.local.json,提交的 *.sample.json 仅含占位符。
+# ============================================================================
+
+# ---- .NET 构建产物 ----
+bin/
+obj/
+*.user
+*.suo
+*.userprefs
+
+# ---- 构建产物根:纯产物。插件源码在 src/plugins/,构建后输出到 artifacts/plugins/ ----
+#     (目录名刻意不与源码目录同名:见 README「目录结构」下 plugins 的三处同名陷阱)
+/artifacts/
+
+# ---- 发布产物:不进仓库,走 GitHub Releases ----
+# dist/ 是 pack-release.bat 的输出(解压树 + zip)。不进版本管理的原因:
+#   1. 体积:约 123 MB,其中 88% 是解压目录里 1094 个第三方 .NET 运行时 dll;
+#   2. git 对 zip/dll 无法有效增量 —— 每次重打包都会在历史里再留一份完整副本;
+#   3. 纯派生物,可由 pack-release.bat 随时重建,无版本管理价值。
+# 发布包以 Release 附件分发(见 README「获取发布包」)。
+/dist/
+
+# ---- IDE / 编辑器 ----
+.vs/
+.idea/
+.vscode/
+*.swp
+*~
+
+# ---- Node ----
+node_modules/
+npm-debug.log*
+
+# ---- 机密:真实连接串/口令(见 configs/his/ 与 start-web.bat) ----
+# configs/his/ 按约定只放模板:白名单先放行 *.sample.json,其余一律拦下
+# (防止换个文件名存凭据,例如 his.json)。真实连接串只放 *.local.json,永不入库。
+configs/his/*
+!configs/his/*.sample.json
+*.local.json
+*.secret.json
+!**/*.sample.json
+
+# ---- 运行期产物 ----
+# 批量分组的默认输出 <输入>.out.jsonl
+*.out.jsonl
+*.tmp
+
+# ---- 开发期工作目录(必须忽略) ----
+# .workbuddy/ 是本地协作/验证工作区:审计脚本、多分辨率截图、临时编译输出
+# (verify-bin/)、记忆文件都在这里,累计可达数百 MB,且内容是过程性的。
+# 它们不是产品的一部分,任何一份都不该进仓库。
+.workbuddy/
+
+# ---- 临时目录 ----
+# 造件/探针脚本的中间产物落地处(如 make-*.py 的产物、探针输出)。
+/tmp/
+
+# ---- 批量上传测试件(不随仓库分发,见 README「测试数据」) ----
+# 体积过大(单个 108MB 级)且是派生件:能由 HQMS 导出样例重新生成。
+# 需要时放在仓库外,或用 --output 指向任意位置。
+/testdata/
+/hqmsts*.xlsx

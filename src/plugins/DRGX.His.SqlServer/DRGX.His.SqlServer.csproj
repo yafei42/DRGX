@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <!-- 见 DRGX.Fee.PointValue.csproj 的说明:OutputPath 必须指向项目目录之外,
+         否则 DefaultItemExcludes 会排除掉本项目全部 .cs,编出空程序集。
+         插件私有依赖(含 native 的 SqlClient SNI)随 .deps.json 一起落在装载目录,
+         由 PluginLoadContext 从该目录解析。 -->
+    <OutputPath>$(MSBuildThisFileDirectory)..\..\..\artifacts\plugins\$(MSBuildProjectName)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <AppendRuntimeIdentifierToOutputPath>false</AppendRuntimeIdentifierToOutputPath>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 契约/共享程序集:只编译期引用,运行时由宿主默认上下文提供 -->
+    <ProjectReference Include="..\..\DRGX.Abstractions\DRGX.Abstractions.csproj" ExcludeAssets="runtime" Private="false" />
+    <ProjectReference Include="..\..\DRGX.His\DRGX.His.csproj" ExcludeAssets="runtime" Private="false" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 插件私有依赖:宿主因此不必为每种 HIS 背上数据库驱动 -->
+    <PackageReference Include="Microsoft.Data.SqlClient" Version="6.0.2" />
+  </ItemGroup>
+
+  <!--
+    DRGX.His.SqlServer — SQL Server / HealthOne HIS 病案提取连接器插件
+
+    实现 IHisConnector,内置HealthOne视图契约(vae1/VAO2/RAB1/BAK1)为默认 SQL 模板,
+    可用配置 sql.* 覆盖。换 HIS = 新增一个同类插件,宿主零改动。
+  -->
+
+</Project>

@@ -1,0 +1,2911 @@
+/* ============================================================================
+   DRG 分组工作台 — 分拣台 · Sorting Bench
+   ----------------------------------------------------------------
+   一线编码员的工作台。DRG 分组的本质动作是「把病例分拣进组」,界面把这件
+   事直接具象化:病例是一张行李牌,结果卡嵌在一道凹槽里,灯珠显示管线状态。
+
+   三条形态铁律(方案 B 骨架 + A/C 的吸收点):
+     · 结构件(卡槽 / 灯珠 / 行李牌 / 分段控件)= 圆角 + 内阴影,表达物理厚度;
+     · 数据件(表格 / 参数网格 / 刻度尺)= 零圆角 + 发丝线,吸收方案 C 的精密仪表语汇;
+     · 分隔用台账格线(细横线 / 表头双线),吸收方案 A 的病案台账秩序。
+
+   字体两部(内网部署,全部 Windows 系统字体,不引外网字体):
+     · 等线   正文与控件(机器感、窄、耐看),兼作品牌标题与 DRG 组名(加粗)
+     · 等宽   编码 / 金额 / 计数,全部 tabular-nums
+
+   深浅双主题;全局对比度达 WCAG AA(正文 ≥4.6:1,次要文本 ≥4.5:1)。
+   类名与 js/ 生成的 DOM 结构一一对应,纯视觉层重写,业务逻辑不受影响。
+   ========================================================================== */
+
+:root {
+  /* ---- 颜色:冷灰轨道 + 深钢蓝 ---- */
+  --bg: #e9ecef;                 /* 页面底:分拣台轨道灰 */
+  --bg-2: #f4f6f8;               /* 浅轨道:段落底 / 次级面 */
+  --card: #ffffff;
+  --chip-bg: #e7ecf1;              /* 芯片实底:去边框后靠色阶立形,恒比 --card 深一档 */
+  --wash: rgba(15,27,39,.075);     /* 中性底纹:半透明墨色,叠在白卡面/芯片/轨道上都成立 */
+  --line: #cfd6dd;
+  --line-strong: #b7c2cc;
+  --line-field: #7f8e9c;           /* 输入控件边框:独立于结构线。控件边界是"可操作控件"不是装饰,
+                                      须达 WCAG 1.4.11 ≥3:1(card 3.36:1 / bg-2 3.10:1);
+                                      「减线降噪」只作用于 --line 装饰性结构线,不作用于控件 */
+  --ink: #0f1b27;
+  --ink-2: #42525f;
+  --ink-3: #56636f;   /* 对比度 ≥5:1(WCAG AA):#fff 6.16:1 / --bg 5.19:1 / --bg-2 5.76:1
+                         说明性小字(11-12px)大量用它,故留出余量而非压线 4.5:1 */
+  --accent: #0e4c74;             /* 深钢蓝:唯一强调色 */
+  --accent-deep: #0a3a59;
+  --accent-soft: #e4eef5;
+  --accent-line: #c7dce9;
+  --accent-ink: #ffffff;
+  --ok: #2f7a50;
+  --ok-bg: #e7f4ec;
+  --ok-line: #bbddc8;
+  --warn: #8a5a0b;
+  --warn-bg: #fdf2e0;
+  --warn-line: #ebd3a6;
+  --err: #a8342a;
+  --err-bg: #fbeae7;
+  --err-line: #efc6c0;
+  --info: #0e4c74;
+  --info-bg: #e4eef5;
+  --info-line: #c7dce9;
+  /* 并发症徽标(诊断芯片上的 MCC / CC):语义独立于四个状态色,单独给一支色调。
+     MCC(严重并发症与合并症)与 CC(并发症与合并症)严重程度不同,旧版同用 info 蓝 ——
+     一屏芯片扫下去只能逐字读。改为同一支紫的两个"重量":MCC 实底反白(最响),
+     CC 浅底紫字(沿用判定轨迹 .tbadge.t-cc 既有的紫,同一语义全站同色)。
+     纯色平涂,不做渐变;深色主题只换三行 token。 */
+  --comp-mcc: #4a2a86;
+  --comp-mcc-ink: #ffffff;
+  --comp-cc: #5f3fa8;
+  --comp-cc-bg: rgba(108,72,184,.12);
+  --comp-cc-line: rgba(108,72,184,.30);
+
+  /* ---- 分拣台专属 ---- */
+  --track-top: #e1e6eb;          /* 凹槽上沿 */
+  --track-bot: #edf1f4;          /* 凹槽下沿 */
+  --track-line: #c7cfd7;
+  --slot-in: inset 0 2px 6px rgba(15,27,39,.11), inset 0 -1px 0 rgba(255,255,255,.85);
+  --rail-in: inset 0 1px 2px rgba(15,27,39,.07);
+  --tag-bg: #16354f;             /* 行李牌底:深钢蓝,与 --accent 同族。
+                                    原为近纯黑 #12202e —— 它是整页唯一的极暗面,在满屏浅色
+                                    轨道里读作一个「洞」,明度差 16.4:1 把组名都压住了。
+                                    换色相而非纯降明度:归队到强调色系后它才像体系里的一员。
+                                    (第二轮再提亮一档:13.2 → 11.7:1,配合字号 30→26 减重) */
+  --tag-ink: #ffffff;
+  --tag-x: #7fb8dd;              /* 铭牌尾码 X:深钢蓝底上的一档亮色,与 DRG 主体分开读 */
+  --tag-hole: var(--card);       /* 牌上冲孔:与卡面同色,读作「打孔」 */
+  --lamp-off: #82909c;           /* 灯珠灭态:状态图形而非装饰,须 ≥3:1(bg-2 3.02:1) */
+
+  /* ---- 形态:结构件圆角 / 数据件零圆角 ---- */
+  --radius: 12px;
+  --radius-s: 9px;
+  --radius-xs: 6px;
+  --radius-data: 2px;            /* 表格 / 网格 / 刻度:零圆角 */
+  --radius-slot: 16px;
+  --shadow: 0 1px 2px rgba(15,27,39,.07);
+  --shadow-pop: 0 16px 40px rgba(15,27,39,.20);
+  --ring: 0 0 0 3px rgba(14,76,116,.30);
+
+  /* ---- 字体 ----
+     主字体 = Noto Sans SC(思源黑体同源,自托管 woff2 分片,见
+     fonts/noto-sans-sc/noto-sans-sc.css),内网部署、不请求任何外部 CDN。
+     四档字重各司其职,与下文所有 font-weight 声明一一对应:
+       400 陈述性文本 / 500 标记与表头 / 600 标题 / 700 值与关键数字
+     回退链不走等线:等线字面窄小、x-height 低,一旦回退会与主字体的体量
+     差出一整档,宁可回退到同为大字面的雅黑系列。 */
+  --font: "Noto Sans SC", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC",
+          "Segoe UI", system-ui, -apple-system, sans-serif;
+  /* 名称 / 段落型文本:与主字体同族。保留该 token 作为语义钩子,
+     将来若给"人读的长文本"换字体,只改这一处即可。 */
+  --font-doc: var(--font);
+  /* 数据字体:编码 / 金额 / 计数。IBM Plex Mono(OFL,自托管 woff2,
+     见 fonts/ibm-plex-mono/)。它只在拉丁/西里尔码位有字面,故字体栈末端接回
+     --font —— 等宽区块里出现的汉字仍以主字体呈现,不会掉到系统默认宋体。
+     不用 JetBrains Mono / Source Code Pro:那两者的零带中心点,而本系统里
+     EB10、12,345.60 都是要照着 HIS 逐字核对的串,中心点会被误读。 */
+  --mono: "IBM Plex Mono", "Cascadia Mono", "SF Mono", Consolas,
+          var(--font), monospace;
+
+  /* ---- 字号标尺 ----
+     固定尺度(不做 clamp 流体字号):应用界面的字号应随窗口稳定,不该随视口呼吸。
+     台阶少而落差明确,避免 12/13/14 三连号挤在一起谁也读不出层级。
+     Noto Sans SC 是大字面(large x-height)字体,同字号下的视觉体量明显大于等线,
+     故正文基准从 15px 收敛到 14px —— 把"更大"让给层级对比,把密度还给一屏布局。 */
+  --text-2xs:  10px;   /* 只给 ▸ / ⌄ 这类"图形字形":它们是图标不是文字,不适用下限 */
+  --text-xs:   11px;   /* 档位号 / 刻度标签 */
+  --text-sm:   12px;   /* 说明性小字的下限:再小就不可读,禁止下探 */
+  --text-md:   13px;   /* 密集表格 / 芯片 / 次级控件 */
+  --text-base: 14px;   /* 正文基准:表单控件、表格正文、按钮 */
+  --text-lg:   16px;   /* 段落型长文本 */
+  --text-xl:   20px;   /* 小节标题 / 结果副标题 */
+  --text-2xl:  26px;   /* 行李牌主编码:30px 时整块压过组名,收到 26 —— 仍是全页最大字符 */
+  --text-3xl:  44px;   /* 空态唯一巨号字符 */
+
+  /* ---- 节奏 ---- */
+  --ease: cubic-bezier(.22,.61,.36,1);
+  color-scheme: light;
+}
+
+/* 深色主题:仅重定义颜色 token,结构层完全复用。
+   html[data-theme] 由内联启动脚本写入:localStorage 手动选择优先,否则跟随系统色彩方案。 */
+[data-theme="dark"] {
+  --bg: #0c1420;
+  --bg-2: #121c2a;
+  --chip-bg: #1f2c3c;            /* 芯片实底:暗色下比 --card 亮一档,同样靠色阶立形 */
+  --wash: rgba(255,255,255,.11); /* 中性底纹:暗色下改为"提亮",语义与亮色一致 */
+  --card: #16212f;
+  --line: #263445;
+  --line-strong: #35465c;
+  --line-field: #5a7089;         /* 深色控件边界:≥3:1(card 3.18:1 / bg-2 3.36:1) */
+  --ink: #e4ebf2;
+  --ink-2: #afbecd;
+  --ink-3: #8a9aab;
+  --accent: #3e8bc0;
+  --accent-deep: #8cc2e4;
+  --accent-soft: #14283a;
+  --accent-line: #1e3e58;
+  --accent-ink: #07131e;
+  --ok: #4fbe81;   /* 深色下降一档饱和:大面积状态点不再刺眼,对比度仍 ≥4.5:1 */
+  --ok-bg: #10301f;
+  --ok-line: #1f5b3a;
+  --warn: #e6b45e;
+  --warn-bg: #302408;
+  --warn-line: #6b5119;
+  --err: #f98a76;
+  --err-bg: #311410;
+  --err-line: #6e2a23;
+  --info: #3e8bc0;
+  --info-bg: #14283a;
+  --info-line: #1e3e58;
+  /* MCC / CC:暗色下 MCC 仍是最重的一档(实底用亮紫 + 深字),对比度 ≥7:1 */
+  --comp-mcc: #a98ce8;
+  --comp-mcc-ink: #150a2b;
+  --comp-cc: #b59beb;
+  --comp-cc-bg: rgba(181,155,235,.16);
+  --comp-cc-line: rgba(181,155,235,.34);
+
+  --track-top: #0a1119;
+  --track-bot: #101b27;
+  --track-line: #253244;
+  --slot-in: inset 0 2px 8px rgba(0,0,0,.55), inset 0 -1px 0 rgba(255,255,255,.04);
+  --rail-in: inset 0 1px 3px rgba(0,0,0,.45);
+  --tag-bg: #2a3d52;
+  --tag-ink: #ffffff;
+  --tag-x: #8cc4e6;
+  --lamp-off: #5d6f83;           /* 灯珠灭态:≥3:1(bg-2 3.32:1) */
+
+  --shadow: 0 1px 2px rgba(0,0,0,.4);
+  --shadow-pop: 0 18px 44px rgba(0,0,0,.62);
+  --ring: 0 0 0 3px rgba(62,139,192,.45);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+/* [hidden] 全局兜底:任何 display 值(class 里的 flex/grid 等)都不得盖过 hidden 语义 */
+[hidden] { display: none !important; }
+body {
+  font-family: var(--font);
+  font-size: var(--text-base);
+  line-height: 1.55;
+  color: var(--ink);
+  /* 应用壳:锁定一屏(100dvh),滚动只发生在各视图内部 */
+  height: 100dvh;
+  overflow: hidden;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  /* 排版基线。三条一起开:
+       · kerning / calt —— 字距调整与上下文替换,编码串不再松松垮垮;
+       · tabular-nums  —— 数字一律等宽,金额与计数在多行之间自然对齐;
+     这是"高级感"里最便宜也最见效的一条:同一套字体,调过与没调过一眼可辨。 */
+  font-kerning: normal;
+  font-feature-settings: "kern" 1, "liga" 1, "calt" 1;
+  font-variant-ligatures: common-ligatures contextual;
+  font-variant-numeric: tabular-nums;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+button { font-family: inherit; }
+input, textarea { font-family: inherit; }
+
+/* ============================= 顶栏 ============================= */
+/* 分拣台的机身面板:实底 + 加厚下沿(2px),不做毛玻璃 */
+.topbar {
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  flex: none;
+}
+.topbar-inner {
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 0 20px;
+  height: 54px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.topbar-right { display: flex; align-items: center; gap: 12px; }
+/* 主题切换:与 tabs 同高的幽灵图标按钮;浅色显月亮(切深色),深色显太阳(切浅色) */
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  background: var(--card);
+  color: var(--ink-3);
+  cursor: pointer;
+  transition: color .15s, border-color .15s, background .15s;
+}
+.theme-toggle:hover { color: var(--ink); border-color: var(--line-strong); }
+.theme-toggle:focus-visible { outline: none; box-shadow: var(--ring); }
+.theme-toggle svg { width: 16px; height: 16px; display: block; }
+.theme-toggle .icon-sun { display: none; }
+[data-theme="dark"] .theme-toggle .icon-sun { display: block; }
+[data-theme="dark"] .theme-toggle .icon-moon { display: none; }
+.brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+/* 机身铭牌:深钢蓝底 + 等宽字,机器编号的语汇。
+   尾码 X 单独成格(左发丝分隔 + 亮一档的色),读作型号位而非第五个字母:
+   DRG 是固定的分组方案,X 是「这张病案落进哪个组」—— 一个待定的变量位。
+   与结果区的行李牌共用 --tag-* 一支 token,顶栏和卡面才不会各说各话。 */
+.brand-mark {
+  display: inline-flex;
+  align-items: center;
+  background: var(--tag-bg);
+  color: var(--tag-ink);
+  font-family: var(--mono);
+  font-weight: 700;
+  font-size: var(--text-md);
+  padding: 5px 9px 5px 10px;
+  border-radius: var(--radius-xs);
+  /* 结构件表达厚度:上沿一道高光 + 下沿一道暗边(与卡槽/灯珠同一套物理语汇) */
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--tag-ink) 15%, transparent),
+              inset 0 -1px 0 rgba(0, 0, 0, .22);
+  flex: none;
+}
+.brand-mark .bm-core { letter-spacing: .12em; }
+.brand-mark .bm-x {
+  margin-left: 6px;
+  padding-left: 7px;
+  border-left: 1px solid color-mix(in srgb, var(--tag-ink) 32%, transparent);
+  color: var(--tag-x);
+  letter-spacing: .02em;
+}
+.brand-title {
+  font-family: var(--font-doc);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  margin: 0;
+  white-space: nowrap;
+  letter-spacing: 0;
+}
+.pack-chip {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink-2);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-data);
+  padding: 3px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 260px;
+}
+.foot-note {
+  font-size: 12px;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+@media (max-width: 1180px) { .foot-note { display: none; } }
+
+/* 模式切换:凹轨分段控件,视觉上是「档位切换」而非普通按钮 */
+.tabs {
+  display: flex;
+  gap: 3px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 3px;
+  box-shadow: var(--rail-in);
+  overflow-x: auto;
+  scrollbar-width: none;
+  max-width: 100%;
+}
+.tabs::-webkit-scrollbar { display: none; }
+.tab {
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 6px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color .15s, background .18s var(--ease), box-shadow .18s;
+}
+.tab:hover { color: var(--ink); }
+.tab.is-active {
+  background: var(--card);
+  color: var(--accent);
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(15,27,39,.15);
+}
+.tab:focus-visible, .subtab:focus-visible,
+.btn:focus-visible, .link-btn:focus-visible, .seg-item:focus-visible,
+.seg-tab:focus-visible,
+.chip-x:focus-visible, .copy-btn:focus-visible, .tab:focus-visible,
+summary:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+  box-shadow: var(--ring);
+}
+
+/* ============================= 病案提取 ============================= */
+/* 主路径零录入入口:并入单病例左侧输入区顶部,可折叠(<details>) */
+.extract-sec {
+  background: var(--accent-soft);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+/* 折叠(<details> 关闭)时隐藏 body:作者样式 .extract-row{display:flex} 会覆盖 UA 的 display:none,须显式收起。
+   注意 .mask-toggle 已移到 <summary> 标题行,不能列在这里 —— 收起时它必须仍然可见。 */
+.extract-sec:not([open]) .extract-row,
+.extract-sec:not([open]) .cmd-error { display: none; }
+.extract-row { display: flex; align-items: center; gap: 8px; }
+.extract-row #hisIdInput { flex: 1; min-width: 0; max-width: none; padding: 8px 12px; }
+.extract-sec .cmd-error { margin: 6px 0 0; font-size: 13px; }
+/* 姓名脱敏开关:标题行右侧(与 .opt-tag 同一惯用法)。
+   margin-left:auto 由开关承担,故把折叠箭头的 auto 归零,避免两处 auto 平分空隙把它挤到中间。 */
+.extract-sec .fp-title-summary .mask-toggle { margin: 0 2px 0 auto; font-weight: 400; }
+.extract-sec .fp-title-summary::after { margin-left: 0; }
+/* 批量页的开关在正文里,需要与上方 field-row 拉开距离 */
+.mask-toggle { font-size: 13px; }
+.field-row + .mask-toggle { margin-top: 10px; }
+.cmd-label {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-deep);
+  white-space: nowrap;
+}
+#hisIdInput {
+  flex: 1;
+  min-width: 220px;
+  max-width: 480px;
+  padding: 7px 14px;
+  font-size: 14px;
+  font-family: var(--mono);
+  letter-spacing: .03em;
+}
+.cmd-error { margin: 6px 0 0; font-size: 13px; }
+
+/* 区域选择器:费用数据(RW/参考费用/支付标准)所在区域,无区域包时整体隐藏 */
+.region-wrap {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.region-wrap[hidden] { display: none; } /* flex 声明会盖过 UA 的 [hidden] 规则,需显式还原 */
+.region-wrap .cmd-label {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.region-sel {
+  padding: 4px 7px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--ink-2);
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  max-width: 200px;
+  transition: border-color .16s var(--ease), color .16s var(--ease);
+}
+.region-sel:hover { color: var(--ink); border-color: var(--line-strong); }
+.region-sel:focus-visible { border-color: var(--accent); box-shadow: var(--ring); outline: none; }
+
+/* 输入编码版本(顶栏):全局口径开关,与「区域」同排同尺度。
+   单病例/批量/HIS 三条录入通道共用它 —— 放在表单里会让人以为只管单病例。 */
+.codever-wrap {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.codever-wrap .cmd-label {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.cv-seg {
+  display: flex;
+  gap: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-xs);
+  overflow: hidden;
+}
+.cv-item {
+  padding: 4px 9px;
+  font-size: 12px;
+  font-family: inherit;
+  color: var(--ink-3);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  transition: color .16s var(--ease), background .16s var(--ease);
+}
+.cv-item + .cv-item { border-left: 1px solid var(--line); }
+.cv-item:hover { color: var(--ink); background: var(--bg-2); }
+.cv-item:focus-visible { outline: none; box-shadow: inset var(--ring); }
+/* 命中态有两条路径:JS 接管前由 <html data-codever> 决定(首屏不闪),接管后走 .is-active。 */
+html[data-codever="guolin"] .cv-item[data-ver="guolin"],
+html[data-codever="yibao"] .cv-item[data-ver="yibao"],
+.cv-item.is-active {
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+.cv-item.is-active:hover { background: var(--accent); color: var(--accent-ink); }
+
+/* ============================= 批量:来源分段 ============================= */
+.seg-tabs {
+  display: flex;
+  gap: 3px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 3px;
+  width: fit-content;
+  max-width: 100%;
+  margin-bottom: 14px;
+  box-shadow: var(--rail-in);
+}
+.seg-tab {
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+  font-size: 14px;
+  font-weight: 500;
+  padding: 7px 18px;
+  border-radius: 8px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color .15s, background .18s var(--ease), box-shadow .18s;
+}
+.seg-tab:hover { color: var(--ink); }
+.seg-tab.is-active {
+  background: var(--card);
+  color: var(--accent);
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(15,27,39,.15);
+}
+.bsrc { animation: fade-in .2s var(--ease); }
+
+/* 批量工具条:汇总 chips + 只看异常开关同排 */
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.batch-toolbar .batch-summary { flex: 1; min-width: 300px; margin-bottom: 0; }
+.batch-toolbar #batchCsvTop { margin-left: auto; }
+.filter-toggle { margin-bottom: 0; white-space: nowrap; }
+
+/* 表格行可点击(批量全行):光标、悬停与行尾展开指示 */
+.row-clickable { cursor: pointer; }
+.row-clickable:hover td { background: color-mix(in srgb, var(--accent-soft) 70%, transparent); }
+.row-expand-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--ink-3);
+  font-size: 12px;
+  white-space: nowrap;
+  user-select: none;
+}
+.row-expand-hint::before { content: "▸"; font-size: var(--text-2xs); color: var(--accent); }
+.row-clickable[aria-expanded="true"] .row-expand-hint::before { transform: rotate(90deg); }
+.row-copy-cell { width: 64px; text-align: right; white-space: nowrap; }
+.row-reason { max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 批量行内展开:异常行点击后插入的判定摘要行 */
+.batch-detail-row > td {
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--line);
+  padding: 0;
+}
+.batch-detail {
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  animation: fade-in .18s var(--ease);
+}
+.batch-detail-facts { display: flex; flex-wrap: wrap; gap: 8px; }
+.batch-detail-facts .stat-chip { padding: 6px 12px; }
+.batch-detail-facts .stat-chip b { font-size: 14px; }
+.batch-detail-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* ============================= 页面骨架 ============================= */
+.page {
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 14px 20px 16px;
+  flex: 1;
+  min-height: 0;          /* 应用壳:允许视图收到剩余高度 */
+}
+.view { height: 100%; min-height: 0; }
+.split {
+  height: 100%;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(400px, 480px) minmax(0, 1fr);
+  gap: 18px;
+  align-items: stretch;
+}
+/* 双栏各自内滚:录入与结果互不牵动,整页永不滚动 */
+.col-form { overflow-y: auto; min-height: 0; scrollbar-gutter: stable; }
+.col-result { overflow-y: auto; min-height: 0; scrollbar-gutter: stable; }
+.stack { height: 100%; min-height: 0; display: flex; flex-direction: column; gap: 14px; }
+#view-batch .stack { overflow-y: auto; scrollbar-gutter: stable; }
+/* 数据一览:子标签固定,表格独占剩余高度内滚(单屏) */
+#view-data .stack { overflow: hidden; }
+#dataSubtabs { flex: none; }
+#dataTableCard {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+#dataTableCard .table-wrap { flex: 1; min-height: 0; }
+
+@media (max-width: 1080px) {
+  /* 窄屏回退:解除一屏锁定,恢复自然文档流 */
+  body { height: auto; overflow: auto; }
+  .view { height: auto; }
+  .split { height: auto; grid-template-columns: 1fr; }
+  .col-form, .col-result { overflow: visible; }
+  #view-batch .stack { overflow: visible; height: auto; }
+  #dataTableCard { flex: none; }
+  #dataTableCard .table-wrap { max-height: 60vh; }
+  .topbar-inner { height: auto; flex-wrap: wrap; padding: 8px 16px; gap: 8px; }
+  .brand-title { font-size: 18px; }
+}
+@media (max-width: 560px) {
+  .page { padding: 12px 12px 16px; }
+  .fp-actions { flex-wrap: wrap; }
+}
+
+/* ============================= 卡片(结构件) ============================= */
+/* 分拣台的格位:实底 + 边框,不加通用投影——投影只留给浮层(下拉/弹窗) */
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 14px 16px;
+  margin-bottom: 0;
+}
+.card-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-2);
+  margin: 0 0 10px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  text-transform: none;
+}
+.opt-tag {
+  font-size: 12px;
+  font-weight: 400;
+  letter-spacing: 0;
+  color: var(--ink-3);
+}
+
+/* ============================= 单病例表单面板 ============================= */
+.form-panel {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  /* 不裁剪:fp-actions 需要相对滚动列 sticky 吸底 */
+  overflow: visible;
+}
+/* 分区不再用分隔线:节间距 + 节标题自身承担分组(减线降噪,线的预算留给控件描边) */
+.fp-sec { padding: 14px 16px; }
+/* 费用测算:details 折叠 */
+.fp-sec-fee { list-style: none; }
+.fp-sec-fee::-webkit-details-marker { display: none; }
+.fp-sec-fee::marker { content: ""; }
+.fp-title-summary { cursor: pointer; user-select: none; }
+.fp-title-summary::after { content: "▸"; margin-left: auto; font-size: 12px; color: var(--ink-3); transition: transform .15s; }
+.fp-sec-fee[open] .fp-title-summary::after { transform: rotate(90deg); }
+.fee-fields { padding-top: 4px; }
+/* 提取病例摘要条:HIS 身份信息置左;空值时整体隐藏(无边框,靠 bg-2 底与间距分区) */
+.picked-tag {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-xs);
+  padding: 3px 7px;
+}
+.picked-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+.pv {
+  flex: 1 1 auto;
+  min-width: 108px;
+  background: var(--bg-2);
+  border-radius: var(--radius-data);
+  padding: 7px 11px;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.pv-k { font-size: 12px; color: var(--ink-2); }
+.pv-v { font-size: 14px; font-weight: 700; color: var(--ink); overflow-wrap: anywhere; }
+.fp-title {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--ink);
+  margin: 0 0 12px;
+  letter-spacing: 0;
+}
+.fp-title .opt-tag { margin-left: auto; font-weight: 400; }
+/* 节序号(00 / 01 / 02 …):左列纵向对齐的"工位号"。
+   上一版为免与顶栏铭牌抢深色块,压成 11px 浅底灰字 —— 抢是没抢了,但也"不明显"
+   到读不出分节。这一版按"工位号"重做:强调色实底 + 反白数码,字号抬到 13px 与
+   芯片同号,min-width 撑住"00 01 02"的等宽节奏,左边缘自然形成一列锚点。
+   实底用 --accent(钢蓝)而不是 --ink(墨黑):顶栏铭牌与结果行李牌是墨黑系,
+   钢蓝是另一支色相,四枚小方块不会与它们抢焦点,却能一眼扫到。
+   字体改回 --font 而非 --mono:分节号是"铬"不是数据,且主字体的 0 是干净椭圆 ——
+   等宽字体(JetBrains Mono 等)的带点零在"00"这种位置会被误读成脏点。 */
+.fp-num {
+  flex: none;
+  font-family: var(--font);
+  font-size: var(--text-md);      /* 13px:与 .chip 同号,左列可扫读 */
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .04em;
+  line-height: 1;
+  min-width: 27px;
+  padding: 5px 7px;
+  border-radius: var(--radius-xs);
+  background: var(--accent);
+  color: var(--accent-ink);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.fp-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  border-top: 1px solid var(--line);
+  background: var(--bg-2);
+  border-radius: 0 0 var(--radius) var(--radius);
+  /* 吸底:内容再高,「分组」始终可见 */
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+}
+.action-spacer { flex: 1; }
+.btn-sm { padding: 7px 16px; font-size: 14px; border-radius: var(--radius-s); }
+.btn-lg { padding: 11px 30px; font-size: 15px; }
+
+/* 左侧第4节费用测算:医院等级 / 医保类型 / 实际费用 三框同排一行,各自定宽。
+   旧布局「等级 + 类型」各 flex:1 撑到半列(≈217px),「实际费用」独占整行(≈448px)——
+   选项只有 2~3 个字、金额也只有几位,大框纯属浪费左侧纵向空间,且让三项看起来毫无关联。 */
+#feeSec .field-row .field { flex: 0 0 auto; }
+#feeLevelField { width: 124px; }
+.fee-type-field { width: 124px; }
+.fee-amount-field { width: 148px; }
+#feeSec select, .fee-amount-field input { width: 100%; }
+
+/* 矮屏(如 1366×768):压缩表单垂直节奏,保证整列一屏放下 */
+@media (max-height: 800px) {
+  .fp-sec { padding: 8px 16px; }
+  .fp-title { margin: 0 0 8px; }
+  .chipbox { min-height: 36px; padding: 3px; }
+  .chip-input { padding: 2px 6px !important; }
+  .field-row + .field-row { margin-top: 10px; }
+  .field-row.neo { margin-top: 10px; padding-top: 10px; }
+  .fp-actions { padding: 10px 16px; }
+  .btn-lg { padding: 10px 26px; }
+}
+
+/* ============================= 表单 ============================= */
+.field-row { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; }
+.field-row + .field-row { margin-top: 10px; }
+.field-row.neo {
+  padding-top: 11px;
+  margin-top: 11px;
+}
+.neo-hint {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.neo-hint b { color: var(--accent-deep); font-weight: 700; }
+.field-grow { flex: 1; min-width: 110px; }
+/* 年龄:录入值最多三位数,不需要占满行内剩余宽度 —— 旧为 .field-grow,在 480px 列里
+   能撑到 ≈200px,同一个两位数输入框比旁边的性别分段控件还宽。 */
+.field-age { flex: 0 0 auto; width: 96px; }
+.field { display: flex; flex-direction: column; gap: 5px; }
+.field + .field, .field + .chipbox, .card .field:not(:first-child) { margin-top: 9px; }
+.f-label { font-size: 13px; color: var(--ink-2); font-weight: 600; }
+.req { color: var(--err); }
+/* 控件边界用独立的 --line-field(WCAG 1.4.11 ≥3:1),结构线才用 --line。
+   .chip-input 走 chipbox 自身的容器边框,故从通用控件规则中排除 ——
+   这样就不必再用 !important 去对抗这条规则(旧写法是三处 !important)。 */
+input[type="number"], input[type="text"]:not(.chip-input), textarea, select {
+  border: 1px solid var(--line-field);
+  border-radius: var(--radius-s);
+  padding: 9px 11px;
+  font-size: 14px;
+  color: var(--ink);
+  background: var(--card);
+  outline: none;
+  min-width: 0;
+  transition: border-color .15s, box-shadow .15s;
+}
+input[type="number"] { width: 100%; font-variant-numeric: tabular-nums; }
+input:focus-visible, textarea:focus-visible, select:focus-visible {
+  border-color: var(--accent);
+  box-shadow: var(--ring);
+}
+textarea {
+  width: 100%;
+  resize: vertical;
+  line-height: 1.7;
+  font-size: 13px;
+}
+
+/* 性别二选一 */
+.seg { display: flex; gap: 0; border: 1px solid var(--line-field); border-radius: var(--radius-s); overflow: hidden; }
+.seg-item {
+  border: 0;
+  background: var(--card);
+  color: var(--ink-2);
+  padding: 8px 20px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: background .15s, color .15s;
+}
+.seg-item + .seg-item { border-left: 1px solid var(--line-field); }
+.seg-item:hover { color: var(--ink); background: var(--bg-2); }
+.seg-item.is-active { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+.seg-item[aria-checked="true"] { background: var(--accent); color: var(--accent-ink); font-weight: 700; }
+
+.link-btn {
+  border: 0;
+  background: none;
+  color: var(--accent-deep);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 8px 2px;
+  white-space: nowrap;
+}
+.link-btn:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* ============================= 编码芯片 ============================= */
+.chipbox {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  border: 1px solid var(--line-field);
+  border-radius: var(--radius-s);
+  padding: 5px;
+  min-height: 42px;
+  background: var(--card);
+  cursor: text;
+  transition: border-color .15s, box-shadow .15s, background .15s;
+}
+.chipbox:focus-within { border-color: var(--accent); box-shadow: var(--ring); }
+.chip-input {
+  flex: 1;
+  min-width: 130px;
+  /* 已从通用 input 规则中排除(见该规则的 :not(.chip-input)),无需 !important 对抗 */
+  border: 0;
+  box-shadow: none;
+  padding: 4px 6px;
+  font-size: 14px;
+  /* 焦点环由 .chipbox:focus-within 统一呈现,输入框本体不再单独描边 */
+  outline: none;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  /* 去边框。芯片的形改由"色阶 + 字重"立起来:
+     实底恒比卡面深一档(--chip-bg),在白色卡面上自成一块,少了发丝线也不散架;
+     chip 是已录入的数据陈列,非交互非状态 —— 一屏几十个芯片,谁也不许喊。
+     强调色只留给焦点环、主操作与未知码。 */
+  background: var(--chip-bg);
+  border: 0;
+  border-radius: var(--radius-data);
+  padding: 4px 6px 4px 10px;
+  font-size: var(--text-md);
+  max-width: 100%;
+  animation: chip-in .18s var(--ease);
+}
+@keyframes chip-in { from { transform: scale(.94); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+/* 已存在的芯片在重绘时不重放入场动画:「转换医保版编码」开关只改显示口径,
+   不该让整排芯片再"弹"一次(旧实现每次都是 remove + insert,必然重播) */
+.chip.no-anim { animation: none; }
+/* 待删除态:空输入框里按退格,第一次只把末位芯片置为这个状态,第二次才真删。
+   用「内描环」当选中语汇 —— 芯片已去边框,环是唯一不与"实底色阶"打架的表达,
+   用 inset 而不是 outline,既不撑尺寸也不盖住相邻芯片。 */
+.chip.is-armed { box-shadow: inset 0 0 0 2px var(--accent); }
+.chip .chip-code { font-weight: 700; color: var(--ink); white-space: nowrap; font-family: var(--mono); }
+/* 国临版独有、映射表无出口的码:码上给一道虚下划线,与徽标「无医保对应」互为呼应 */
+.chip .chip-code.is-unmapped { text-decoration: underline dotted; text-underline-offset: 3px; color: var(--err); }
+.chip .chip-name { font-weight: 400; color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 240px; }
+/* ---- 徽标 ----
+   同样去边框:语义全部由"实底 + 文字色"承担,不用描边。
+   字重保持 600 —— 11px 的汉字需要一点分量才立得住,细了会糊。
+   字号定 11px:它们是"铬"(紧凑标记)而非阅读文本,放大只会撑高芯片与表格行;
+   阅读性的说明文字统一 ≥12px(见 --ink-3 的注释)。 */
+.badge {
+  flex: none;
+  display: inline-block;
+  font-size: var(--text-xs);
+  line-height: 1.6;
+  border-radius: var(--radius-data);
+  padding: 1px 7px;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.badge.err { background: var(--err-bg); color: var(--err); }
+.badge.warn { background: var(--warn-bg); color: var(--warn); }
+.badge.ok { background: var(--ok-bg); color: var(--ok); }
+.badge.info { background: var(--info-bg); color: var(--info); }
+/* 并发症:MCC 实底反白(最重的一档),CC 浅底紫字。两者不是状态色,故不借用 err/warn。 */
+.badge.mcc { background: var(--comp-mcc); color: var(--comp-mcc-ink); }
+.badge.cc { background: var(--comp-cc-bg); color: var(--comp-cc); }
+/* 中性徽标用半透明墨色 --wash:它会"叠"在任何底上(白卡面 / 芯片实底 / 轨道灰),
+   不像固定色那样换个背景就消失 —— 无边框时这是最稳的一种中性底。 */
+.badge.neutral { background: var(--wash); color: var(--ink-2); }
+/* 未知码:不再用 3px 左边线,整块换成警示底 —— 它是全屏唯一的红块,本身就够响。
+   三个信号叠加:整块警示底 + 编码转红 + 内嵌 err 徽标。 */
+.chip.is-unknown { background: var(--err-bg); }
+.chip.is-unknown .chip-code { color: var(--err); }
+.chip-x {
+  border: 0;
+  background: transparent;
+  color: var(--ink-3);
+  /* 24px 命中区(WCAG 2.5.8);负外边距抵消,不撑高芯片 */
+  width: 24px;
+  height: 24px;
+  margin: -3px -6px -3px -3px;
+  border-radius: var(--radius-xs);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  transition: background .12s, color .12s;
+}
+.chip-x:hover { background: rgba(15,27,39,.10); color: var(--ink); }
+[data-theme="dark"] .chip-x:hover { background: rgba(255,255,255,.14); }
+
+/* ============================= 检索下拉(浮层,保留投影) ============================= */
+.dropdown {
+  position: fixed;
+  z-index: 50;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  box-shadow: var(--shadow-pop);
+  max-height: 340px;
+  overflow: auto;
+  padding: 5px;
+}
+.dd-item {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 11px;
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  font-size: 14px;
+  transition: background .1s;
+}
+.dd-item b { color: var(--accent-deep); white-space: nowrap; font-family: var(--mono); }
+.dd-item .dd-name { color: var(--ink); min-width: 0; }
+.dd-item .badge { margin-left: auto; }
+.dd-item.is-hl { background: var(--accent-soft); }
+.dd-empty { padding: 11px 13px; color: var(--ink-3); font-size: 13px; }
+.dd-code-wrap { display: inline-flex; align-items: baseline; white-space: nowrap; }
+.dd-code-arrow { color: var(--accent-deep); margin: 0 4px; }
+
+/* 表格降级提示(如"只预览前 N 行,完整结果请导出 CSV"):
+   放在表格与页脚之间,把这句话从"表格的一部分"里拎出来 —— 它讲的是"表里不全",
+   不显眼就等于静默截断。按数据件语言走零圆角 + 发丝线,配色复用警示档。 */
+.table-note {
+  margin: 0 0 8px;
+  padding: 6px 10px;
+  border: 1px solid var(--warn-line);
+  background: var(--warn-bg);
+  color: var(--warn);
+  font-size: var(--text-sm);
+  line-height: 1.55;
+}
+
+/* ============================= 按钮 ============================= */
+.actions { display: flex; align-items: center; gap: 10px; margin-top: 4px; flex-wrap: wrap; }
+.btn {
+  border-radius: var(--radius-s);
+  border: 1px solid transparent;
+  padding: 9px 26px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;      /* 窄列下文字永不竖排 */
+  flex: none;
+  transition: background .16s var(--ease), border-color .16s, color .16s, transform .08s;
+}
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: .5; cursor: default; }
+/* 主操作:实底深钢蓝,取消渐变——机器的按钮是压下去的,不是发光的 */
+.btn-primary {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+[data-theme="dark"] .btn-primary { background: var(--accent); color: var(--accent-ink); }
+.btn-primary:hover:not(:disabled) { filter: brightness(1.12); }
+.btn-primary:active:not(:disabled) { filter: brightness(.94); }
+.btn-ghost { background: var(--card); border-color: var(--line-strong); color: var(--ink-2); font-weight: 500; }
+.btn-ghost:hover { color: var(--ink); border-color: var(--ink-3); }
+.form-error { color: var(--err); font-size: 14px; margin: 10px 0 0; font-weight: 500; }
+
+/* ============================= 结果区 ============================= */
+/* 空态:待分拣的空轨道。留白是有意的 —— 用轨道纹理 + 放大水印把空白做成"设计"而非"没做",
+   并给出下一步动作(示例病例),而不是只留两行字让人盯着 60% 的空白。 */
+.placeholder {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  height: 100%;
+  min-height: 320px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-3);
+  gap: 6px;
+  padding: 30px;
+  text-align: center;
+}
+/* 轨道纹理:中心可见、四周淡出(纯装饰,不参与语义) */
+.placeholder::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: repeating-linear-gradient(90deg,
+    transparent 0 47px,
+    color-mix(in srgb, var(--track-line) 40%, transparent) 47px 48px);
+  -webkit-mask-image: radial-gradient(130% 95% at 50% 46%, #000 0%, transparent 76%);
+  mask-image: radial-gradient(130% 95% at 50% 46%, #000 0%, transparent 76%);
+}
+.placeholder > * { position: relative; }
+.placeholder p { margin: 0; max-width: 46ch; }
+.placeholder-sub { font-size: 13px; }
+.placeholder-mark {
+  font-family: var(--mono);
+  font-size: var(--text-3xl);
+  font-weight: 700;
+  letter-spacing: .24em;
+  color: var(--track-line);
+  margin-bottom: 14px;
+  user-select: none;
+}
+.placeholder-actions { margin-top: 20px; }
+
+/* ---- 卡槽:结果卡嵌进凹槽,物理厚度用内阴影表达(不是投影) ---- */
+.result-slot {
+  background: linear-gradient(180deg, var(--track-top), var(--track-bot));
+  border: 1px solid var(--track-line);
+  border-radius: var(--radius-slot);
+  padding: 13px;
+  box-shadow: var(--slot-in);
+}
+
+/* 结果卡:卡面上的判定单;卡面比槽底亮一档 */
+.result-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  overflow: hidden;
+  animation: result-in .28s var(--ease);
+}
+@keyframes result-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.rc-head {
+  padding: 10px 18px;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 9px 16px;
+  flex-wrap: wrap;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink-2);
+}
+.rc-head.neutral { color: var(--accent-deep); }
+.rc-head.warn { color: var(--warn); }
+.rc-head.err { color: var(--err); }
+/* 结果卡头部的口径徽标:只接位置,不接颜色。
+   原实现用「白底 + --line 描边」在 --bg-2 的头条上显形 —— 徽标统一去边框后,
+   白底白面(1.07:1)就等于消失。改为继承 .badge.neutral 的半透明 --wash,
+   它在任何底上都会叠出一档可见的明度差。 */
+.rc-head .badge.neutral { margin-left: auto; }
+/* 灯珠串:解析 → 编码 → 分组 → 费用,管线过站的物理信号。
+   off = 该站本次未触发(空心环),不是失败;失败/歧义才走 warn/err 实心色。 */
+.rc-lamps {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  flex: none;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+.lamp {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  background: transparent;
+  border: 1.5px solid var(--lamp-off);
+  box-sizing: border-box;
+}
+.lamp.on { background: var(--ok); border-color: var(--ok); box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 20%, transparent); }
+.lamp.warn { background: var(--warn); border-color: var(--warn); box-shadow: 0 0 0 3px color-mix(in srgb, var(--warn) 20%, transparent); }
+.lamp.err { background: var(--err); border-color: var(--err); box-shadow: 0 0 0 3px color-mix(in srgb, var(--err) 20%, transparent); }
+.lamp-labels {
+  display: inline-flex;
+  gap: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--ink-3);
+}
+.lamp-item { display: inline-flex; align-items: center; gap: 5px; }
+
+.rc-body { padding: 16px 18px; }
+.rc-code-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.row-detail-cell { width: 90px; max-width: 90px; text-align: right; white-space: nowrap; }
+.row-detail-cell .row-expand-hint { justify-content: flex-end; }
+/* 行李牌:深底等宽 + 左侧冲孔,DRG 码被「挂」出来。
+   底色走 --tag-bg(深钢蓝),不再用近纯黑;并补上内阴影 —— 原先是块无光影的纯色,
+   与「结构件靠内阴影表达厚度」这条铁律脱节,反白大字才显得格外硬。 */
+.rc-code {
+  font-family: var(--mono);
+  font-size: var(--text-2xl);
+  font-weight: 700;
+  letter-spacing: .1em;
+  line-height: 1.1;
+  color: var(--tag-ink);
+  background: var(--tag-bg);
+  border-radius: 9px;
+  padding: 7px 16px 7px 32px;
+  position: relative;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--tag-ink) 16%, transparent),
+              inset 0 -2px 5px rgba(0, 0, 0, .18);
+}
+.rc-code::before {
+  content: "";
+  position: absolute;
+  left: 12px; top: 50%;
+  transform: translateY(-50%);
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--tag-hole);
+}
+.rc-code-land { animation: code-land .2s var(--ease); }
+@keyframes code-land { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.copy-btn {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink-2);
+  font-size: 12px;
+  border-radius: var(--radius-xs);
+  padding: 4px 10px;
+  min-height: 26px;   /* ≥24px 命中区 */
+  cursor: pointer;
+  transition: all .12s;
+}
+.copy-btn:hover { color: var(--accent-deep); border-color: var(--accent-line); background: var(--accent-soft); }
+.rc-name {
+  font-family: var(--font-doc);
+  font-size: var(--text-xl);
+  font-weight: 600;
+  letter-spacing: 0;
+  min-width: 0;
+  margin-top: 10px;
+}
+/* 主诊断排除表命中:结果级 warn 信号,常显在组名下方并直接列出被排除的码。
+   (原先是「点此核对」按钮 + 明细折叠区;折叠区已移除,明细改为就地展开) */
+.rc-excluded {
+  margin-top: 10px;
+  padding: 8px 12px;
+  background: var(--warn-bg);
+  border: 1px solid var(--warn-line);
+  border-radius: var(--radius-data);
+}
+.rc-excluded-h {
+  margin: 0 0 6px;
+  color: var(--warn);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+/* ---- 换主诊/手术模拟:左侧「诊断与手术操作」节标题旁入口 + 原生 dialog 弹窗 ---- */
+/* 入口按钮:节标题右侧的文字按钮,未分组/无候选时置灰 */
+/* 命中区 ≥24px(WCAG 2.5.8):原为 4px 内边距导致只有 22px 高 */
+.whatif-toggle { margin-left: auto; font-size: 13px; padding: 4px 2px; min-height: 24px; display: inline-flex; align-items: center; }
+.whatif-toggle:disabled { color: var(--ink-3); opacity: .55; cursor: default; text-decoration: none; }
+.whatif-toggle:disabled:hover { text-decoration: none; }
+/* 弹窗本体:重置原生边框,卡片风格;宽 720px 容纳单行候选表 */
+.whatif-dlg {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--ink);
+  box-shadow: var(--shadow-pop);
+  padding: 16px 18px 15px;
+  width: min(720px, calc(100vw - 48px));
+  max-height: min(82vh, 720px);
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+.whatif-dlg::backdrop { background: rgba(12,20,32,.42); backdrop-filter: blur(1px); }
+
+/* ---- 通用弹窗(自有 confirm / prompt,替代原生 confirm()/prompt()) ---- */
+.modal-dlg { width: min(460px, calc(100vw - 48px)); }
+.mdlg-body { margin-top: 8px; }
+.mdlg-text { margin: 0; font-size: 14px; line-height: 1.6; color: var(--ink-2); }
+.mdlg-label { display: block; margin-bottom: 6px; font-size: 13px; font-weight: 600; color: var(--ink-2); }
+.mdlg-input {
+  width: 100%;
+  padding: 9px 11px;
+  font-size: 14px;
+  font-family: var(--font);
+  color: var(--ink);
+  background: var(--card);
+  border: 1px solid var(--line-field);
+  border-radius: var(--radius-s);
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+.mdlg-input:focus-visible { border-color: var(--accent); box-shadow: var(--ring); }
+.mdlg-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+/* 破坏性操作(清空录入):实底砖红,与主操作的钢蓝明确区分;深浅主题同值以保证白字对比度 */
+.btn-danger { background: #a8342a; color: #fff; }
+.btn-danger:hover:not(:disabled) { filter: brightness(1.1); }
+.btn-danger:active:not(:disabled) { filter: brightness(.94); }
+
+/* ---- 仅供辅助技术的隐藏文本 / 降级复制的临时宿主 ---- */
+.sr-only {
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0; border: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+.copy-shim { position: fixed; top: 0; left: -9999px; opacity: 0; }
+
+/* 跳过导航:仅在键盘聚焦时出现(WCAG 2.4.1),鼠标用户不可见 */
+.skip-link {
+  position: absolute;
+  left: -9999px;
+  top: 8px;
+  z-index: 100;
+  padding: 8px 14px;
+  background: var(--card);
+  color: var(--accent-deep);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-xs);
+  font-size: 14px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.skip-link:focus { left: 12px; }
+
+.wi-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.wi-head b { font-size: 14px; color: var(--ink); }
+.wi-head .chip-x { margin-left: auto; margin-right: -8px; }
+.whatif-note { margin: 0 0 10px; font-size: 13px; }
+.wi-table { display: flex; flex-direction: column; gap: 6px; }
+/* 候选行:单行五列(类型|编码|名称|结果|更换) */
+.wi-row {
+  display: grid;
+  grid-template-columns: 84px 92px minmax(110px, 1fr) minmax(150px, 1.2fr) auto;
+  gap: 8px 10px;
+  align-items: center;
+  padding: 8px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  font-size: 13px;
+}
+.wi-kind { color: var(--ink-3); font-weight: 600; white-space: nowrap; }
+.wi-code { font-weight: 700; color: var(--ink); }
+.wi-name { color: var(--ink-2); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wi-res { text-align: right; }
+.wi-drg { font-size: 14px; }
+.wi-rw { color: var(--ink-2); font-variant-numeric: tabular-nums; font-family: var(--mono); }
+.wi-same {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 12px;
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-data);
+  padding: 1px 8px;
+}
+
+/* 示例病例弹窗:行 = 场景名 | 说明 | 预期落位,整行可点 */
+.ex-row {
+  display: grid;
+  grid-template-columns: 132px minmax(150px, 1fr) auto;
+  gap: 8px 10px;
+  align-items: center;
+  padding: 9px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  color: var(--ink);
+}
+.ex-row:hover { border-color: var(--accent); background: var(--accent-soft); }
+.ex-code {
+  font-family: var(--mono);
+  font-weight: 700;
+  color: var(--ink-2);
+  font-variant-numeric: tabular-nums;
+}
+.ex-hint { color: var(--ink-3); font-size: 12px; margin-left: 8px; }
+.wi-gname { color: var(--ink-3); }
+/* 当前行(对比基准):白底+主题色左边框,与其他候选行区分 */
+.wi-row-cur { background: var(--card); border-left: 3px solid var(--accent); }
+.wi-row-cur .wi-kind { color: var(--accent-deep); }
+.wi-cur-tag {
+  flex: none;
+  justify-self: end;
+  font-size: 12px;
+  color: var(--ink-3);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-data);
+  padding: 1px 10px;
+  white-space: nowrap;
+}
+/* 同当前组整行弱化:扫读时注意力留给有差异的候选(降噪,不涉价值排序) */
+.wi-row.is-same { opacity: .55; }
+.wi-row.is-same .wi-code { color: var(--ink-2); }
+.wi-row.is-same .wi-apply { opacity: .8; }
+/* 更换:唯一的强调色交互按钮——点击即改表单数据并重新分组 */
+.wi-apply {
+  flex: none;
+  border: 1px solid var(--accent-line);
+  background: var(--accent-soft);
+  color: var(--accent-deep);
+  border-radius: var(--radius-xs);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: filter .12s;
+}
+.wi-apply:hover:not(:disabled) { filter: brightness(.96); }
+.wi-apply:disabled { opacity: .45; cursor: default; }
+/* 窄屏回退:单行五列放不下,候选行改为流式换行(信息/更换一行,结果一行) */
+@media (max-width: 640px) {
+  .whatif-dlg { padding: 12px 12px 11px; }
+  .wi-row { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+  .wi-kind, .wi-code { flex: none; }
+  .wi-name { flex: 1 1 100px; min-width: 0; }
+  .wi-res { flex: 1 1 100%; text-align: left; }
+}
+
+.stat-chip {
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-data);
+  padding: 8px 14px;
+  font-size: 13px;
+  color: var(--ink-2);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.stat-chip b {
+  color: var(--ink);
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+}
+
+/* ============================= 费用测算 ============================= */
+/* 独立卡片,与结果卡同底;卡内轨道/参数行改用 --bg-2 做灰底层次 */
+.fee-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-s);
+  padding: 0 14px;
+  margin-top: 13px;
+  animation: result-in .28s var(--ease);
+}
+/* 内嵌 details 面板:去掉旧内边距,由 .fee-card 统一控制 */
+.rc-details.fee-panel {
+  margin: 0;
+  padding: 0;
+}
+/* 特异性(0,2,1)压过后置的 .rc-details summary:否则字号/颜色/内边距被折叠区基类盖掉 */
+.rc-details.fee-panel summary {
+  cursor: pointer;
+  padding: 12px 2px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: var(--accent-deep);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  user-select: none;
+  transition: color .12s;
+}
+.rc-details.fee-panel summary:hover { color: var(--accent-deep); }
+.rc-details.fee-panel summary::-webkit-details-marker { display: none; }
+.rc-details.fee-panel summary::before {
+  content: "¥";
+  font-family: var(--mono);
+  font-size: 13px; font-weight: 700;
+  color: var(--accent-deep);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-xs);
+  width: 24px; height: 24px;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.rc-details.fee-panel summary::after { content: "▸"; color: var(--ink-3); transition: transform .2s var(--ease); margin-left: auto; }
+.rc-details.fee-panel[open] summary::after { transform: rotate(90deg); }
+
+/* 输入区已上移至左侧表单第4节(#feeSec),本面板为纯输出;loading/错误/参数行共用 .fee-out 容器 */
+.fee-loading { margin: 0; font-size: 13px; color: var(--ink-3); }
+.fee-err {
+  color: var(--err);
+  font-size: 13px;
+  background: var(--err-bg);
+  border: 1px solid var(--err-line);
+  border-radius: var(--radius-data);
+  padding: 9px 13px;
+  margin: 0;
+}
+
+/* ── 费用测算:结论行 + 参数行 ── */
+.fee-params-box { margin-top: 14px; }
+.fee-params { margin: 0; }
+
+/* 主视觉:支付标准 vs 实际费用 并排对比。数据件——零圆角 + 发丝边框 */
+.fee-param-hero {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 11px 14px 10px;
+  margin-bottom: 10px;
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-data);
+}
+.fee-param-hero-row {
+  display: flex;
+  gap: 16px;
+}
+.fee-param-hero-col {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.fee-param-hero-col + .fee-param-hero-col {
+  padding-left: 16px;
+  border-left: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.fee-param-hero-col.is-empty .fee-param-hero-value {
+  color: var(--ink-3);
+  font-size: 16px;
+  font-weight: 500;
+}
+.fee-param-hero-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--accent-deep);
+}
+.fee-param-hero-value {
+  font-family: var(--mono);
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--accent-deep);
+  font-variant-numeric: tabular-nums;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* 盈亏差额行:超标准用警示色,低标准用正常色 */
+.fee-param-hero-diff {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.fee-param-hero-diff-label {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.fee-param-hero-diff-value {
+  font-family: var(--mono);
+  font-size: 14px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.fee-param-hero-diff.is-over .fee-param-hero-diff-value { color: var(--err); }
+.fee-param-hero-diff.is-under .fee-param-hero-diff-value { color: var(--ok); }
+.fee-param-hero-diff-pct {
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--ink-3);
+  margin-left: auto;
+}
+
+/* 次级参数:数据件——零圆角,发丝分隔 */
+.fee-param-grid {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 0;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-data);
+  overflow: hidden;
+}
+.fee-param-cell {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 7px 14px;
+  white-space: nowrap;
+}
+.fee-param-cell + .fee-param-cell {
+  border-left: 1px solid var(--line);
+}
+.fee-param-k {
+  font-size: 12px;
+  color: var(--ink-3);
+}
+.fee-param-v {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---- 费用刻度尺(吸收方案 C):同一标尺上读出倍率区间归属 ----
+   数据件形态:零圆角 + 发丝边框;底缘一条自动刻度,语义锚点(低倍/支付/高倍)
+   与当前费用钉叠在其上。整条即一把尺,不再是一条彩色进度条。 */
+@keyframes feeBarIn { from { opacity: 0; transform: translateY(4px); } }
+.fee-bar { margin-top: 16px; }
+.fee-bar-track {
+  position: relative;
+  height: 38px;
+  border-radius: var(--radius-data);
+  background: var(--card);
+  border: 1px solid var(--line);
+  /* 上:当前费用浮层自 track 顶伸出约 30px(7px 间距+浮层高),38px 留 8px 呼吸;
+     下:刻度尺 14px + 标签链 约 31px,56px 留余量,避免标签互撞 */
+  margin: 38px 2px 56px;
+  animation: feeBarIn .35s var(--ease) both;
+}
+/* 底缘刻度尺:次刻度每 12px 一短线,主刻度每 5 格一长线——把它读成一把尺,而不是进度条 */
+.fee-bar-track::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 14px;
+  border-top: 1px solid var(--line);
+  background-image:
+    repeating-linear-gradient(90deg, var(--line-strong) 0 1px, transparent 1px 12px),
+    repeating-linear-gradient(90deg, var(--line) 0 1px, transparent 1px 12px);
+  background-size: 60px 14px, 12px 7px;
+  background-position: 0 0, 0 100%;
+  background-repeat: repeat-x;
+  pointer-events: none;
+}
+.fee-bar-zone { position: absolute; top: 0; bottom: 14px; }
+.fee-bar-zone.is-low {
+  left: 0;
+  background: color-mix(in srgb, var(--ink-3) 14%, transparent);
+  border-right: 1px dashed var(--line-strong);
+}
+.fee-bar-zone.is-mid { background: transparent; }
+.fee-bar-zone.is-high {
+  right: 0;
+  background: color-mix(in srgb, var(--ink-3) 26%, transparent);
+  border-left: 1px dashed var(--line-strong);
+}
+/* 深色下 track 底更暗,提高区间混合比例保证低/中/高三段可辨 */
+[data-theme="dark"] .fee-bar-zone.is-low { background: color-mix(in srgb, var(--ink-3) 22%, transparent); }
+[data-theme="dark"] .fee-bar-zone.is-high { background: color-mix(in srgb, var(--ink-3) 36%, transparent); }
+.fee-bar-tick {
+  position: absolute;
+  top: -5px; bottom: -5px;
+  width: 1px;
+  transform: translateX(-.5px);
+  background: var(--line-strong);
+}
+/* 低/高倍临界:前后分界锚点,用中性深度梯度加粗;语义色留给真实状态 */
+.fee-bar-tick.fee-bar-low, .fee-bar-tick.fee-bar-high { width: 2px; }
+.fee-bar-tick.fee-bar-low { background: var(--ink-3); transform: translateX(-1px); }
+.fee-bar-tick.fee-bar-high { background: var(--ink-2); transform: translateX(-1px); }
+.fee-bar-tick.fee-bar-low .fee-bar-tick-label { color: var(--ink-3); font-weight: 600; }
+.fee-bar-tick.fee-bar-high .fee-bar-tick-label { color: var(--ink-2); font-weight: 600; }
+/* 支付标准:主锚点,标签落在第二行与低/高倍标签错层 */
+.fee-bar-tick.fee-bar-std { width: 2px; background: var(--accent); transform: translateX(-1px); }
+.fee-bar-tick-label {
+  position: absolute;
+  top: 100%; left: 50%;
+  transform: translateX(-50%);
+  margin-top: 8px;
+  font-size: 12px;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-3);
+  white-space: nowrap;
+}
+.fee-bar-tick.fee-bar-std .fee-bar-tick-label { margin-top: 24px; color: var(--accent-deep); font-weight: 700; }
+/* 贴边刻度:标签内收,避免溢出卡片 */
+.fee-bar-tick.at-start .fee-bar-tick-label { left: 0; transform: none; }
+.fee-bar-tick.at-end .fee-bar-tick-label { left: auto; right: 0; transform: none; }
+/* 当前费用钉:竖线 + 轨道上的圆钮(--pin-c 一处定义,钉/钮/标签同色系) */
+.fee-bar-pin {
+  --pin-c: var(--ink-2);
+  --pin-line: var(--line);
+  position: absolute;
+  top: -5px; bottom: -5px;
+  width: 2px;
+  transform: translateX(-2px);
+  background: var(--pin-c);
+}
+.fee-bar-pin.is-ok { --pin-c: var(--ok); }
+.fee-bar-pin.is-low { --pin-c: var(--warn); }
+.fee-bar-pin.is-high { --pin-c: var(--err); }
+.fee-bar-pin::before {
+  content: '';
+  position: absolute;
+  left: 50%; top: 50%;
+  width: 9px; height: 9px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: var(--pin-c);
+  box-shadow: 0 0 0 2px var(--card);
+}
+.fee-bar-pin-label {
+  position: absolute;
+  bottom: 100%; left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 7px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--pin-c);
+  white-space: nowrap;
+  background: var(--card);
+  border: 1px solid var(--pin-line);
+  border-radius: var(--radius-data);
+  padding: 1px 6px;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+}
+/* 贴边钉标:卡片内收 */
+.fee-bar-pin.at-start .fee-bar-pin-label { transform: none; margin-left: -3px; }
+.fee-bar-pin.at-end .fee-bar-pin-label { left: auto; right: 50%; transform: none; margin-right: -3px; }
+
+/* 倍率结论:费用相对临界值位置的一句话陈述(低倍率/高倍率给警示色调) */
+.fee-conc {
+  margin: 12px 0 0;
+  font-size: 13px;
+  border-radius: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-2);
+}
+.fee-conc.ok { color: var(--ink); }
+.fee-conc.warn { color: var(--warn); }
+.fee-conc b { font-weight: 700; }
+
+/* 演示数据提示:地区包 demo:true 时置于费用面板顶部。
+   用警示色调 + 左侧色条,确保它跟在数字旁边而不是被当成说明文字略过。 */
+.fee-demo-note {
+  margin: 0 0 12px;
+  padding: 8px 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 8%, transparent);
+  border-left: 3px solid var(--warn);
+}
+
+.rc-reason { font-size: 15px; margin: 0 0 8px; font-weight: 700; }
+.rc-hint { color: var(--ink-2); font-size: 14px; margin: 0; }
+
+/* ---- 路径即导航:落位面包屑每段都是按钮,点击展开统一依据面板 ---- */
+.rc-pathwrap { margin-top: 12px; }
+.excluded-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.rc-pathwrap.is-direct { margin-top: 0; }
+/* 批量就地展开:不显示路径条时,依据面板直接顶格,动作按钮放面板头右侧 */
+.rc-pathwrap.is-direct .rc-evi { margin-top: 0; }
+.rc-pathwrap.is-direct .rc-evi-ctx { margin-right: auto; }
+.rc-pathwrap.is-direct .evi-tabs { margin-left: 0; }
+.rc-pathwrap.is-direct .rc-path-acts { margin-left: auto; }
+.rc-pathwrap.is-direct .rc-evi-head { padding: 6px 8px 6px 12px; }
+.rc-pathwrap.is-direct .rc-path-acts .link-btn { font-size: 12px; white-space: nowrap; }
+.rc-pathwrap.is-direct .rc-path-acts:empty { display: none; }
+/* 落位路径:像分拣轨道上的档位,段与段之间是轨道箭头 */
+.rc-path {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+  padding-top: 11px;
+  border-top: 1px solid var(--line);
+}
+.path-seg {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: var(--ink-2);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-data);
+  padding: 5px 11px;
+  cursor: pointer;
+  transition: background .12s, border-color .12s, color .12s, box-shadow .12s;
+}
+.path-seg:hover { border-color: var(--accent-line); color: var(--accent-deep); background: var(--accent-soft); }
+.path-seg:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 1px; }
+/* 末段按落位结果着色:一眼读出成功/歧义/失败 */
+.path-seg.seg-ok { color: var(--ok); border-color: var(--ok-line); background: var(--ok-bg); }
+.path-seg.seg-warn { color: var(--warn); border-color: var(--warn-line); background: var(--warn-bg); }
+.path-seg.seg-err { color: var(--err); border-color: var(--err-line); background: var(--err-bg); }
+/* 当前展开段:下划记号,色彩跟随段自身色调 */
+.path-seg.is-cur { box-shadow: inset 0 -2px 0 currentColor; }
+.path-arrow { color: var(--ink-3); font-size: 13px; user-select: none; }
+.rc-path-acts { margin-left: auto; display: inline-flex; align-items: center; gap: 10px; }
+.rc-path-acts:empty { display: none; }
+.rc-path-acts .link-btn { font-size: 12px; white-space: nowrap; }
+
+/* 统一依据面板:命中依据 / 未通过条件 / 引擎日志 三个粒度同一容器 */
+.rc-evi {
+  margin-top: 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-data);
+  background: var(--bg-2);
+  animation: fade-in .18s var(--ease);
+}
+.rc-evi-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--line);
+}
+.rc-evi-ctx { font-size: 13px; font-weight: 700; color: var(--ink); min-width: 0; }
+.evi-tabs {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 2px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-data);
+  padding: 2px;
+}
+.evi-tab {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-3);
+  border: 0;
+  background: transparent;
+  border-radius: var(--radius-data);
+  padding: 2px 10px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, color .12s;
+}
+.evi-tab:hover { color: var(--ink); }
+.evi-tab.is-active { background: var(--accent-soft); color: var(--accent-deep); font-weight: 700; }
+.evi-close {
+  font-family: inherit;
+  font-size: 15px;
+  line-height: 1;
+  color: var(--ink-3);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-xs);
+  padding: 3px 6px;
+  min-width: 24px;    /* ≥24px 命中区 */
+  min-height: 24px;
+  cursor: pointer;
+}
+.evi-close:hover { color: var(--ink); background: var(--card); }
+.rc-evi-body { padding: 10px 12px 12px; }
+.evi-facts { display: flex; flex-wrap: wrap; gap: 6px; }
+.evi-fact {
+  background: var(--card);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  border-radius: var(--radius-data);
+  padding: 3px 11px;
+  font-size: 13px;
+}
+.evi-fallback { margin: 0; font-size: 13px; color: var(--ink-3); font-style: italic; }
+.evi-act { margin-top: 8px; font-size: 12px; }
+.evi-miss { display: flex; flex-direction: column; gap: 6px; }
+.evi-log-toggle { margin-bottom: 8px; }
+
+details.rc-details { border-top: 1px solid var(--line); margin-top: 12px; }
+.rc-details:first-child { border-top: 0; margin-top: 0; }
+.rc-details summary {
+  cursor: pointer;
+  padding: 10px 2px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--ink-2);
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  transition: color .12s;
+}
+.rc-details summary:hover { color: var(--accent-deep); }
+.rc-details summary::-webkit-details-marker { display: none; }
+.rc-details summary::after { content: "▸"; color: var(--ink-3); transition: transform .2s var(--ease); }
+.rc-details[open] summary::after { transform: rotate(90deg); }
+.rc-details .details-body { padding: 2px 2px 16px; animation: fade-in .2s var(--ease); }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+.dsec { margin-bottom: 14px; }
+.dsec:last-child { margin-bottom: 0; }
+.dsec h4 {
+  font-size: 12px;
+  color: var(--ink-3);
+  font-weight: 700;
+  margin: 0 0 8px;
+}
+.dsec .empty { color: var(--ink-3); font-size: 13px; }
+
+/* 判定轨迹 */
+.trace-toggle { display: flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); margin-bottom: 10px; cursor: pointer; }
+.trace-toggle input { accent-color: var(--accent); }
+.trace { border-left: 2px solid var(--line); padding-left: 15px; display: flex; flex-direction: column; gap: 6px; }
+.tstep { display: flex; align-items: baseline; gap: 8px; font-size: 13px; flex-wrap: wrap; }
+.tbadge {
+  flex: none;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: var(--radius-data);
+  padding: 2px 8px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+}
+.tbadge.t-mdc { background: var(--accent-soft); border-color: var(--accent-line); color: var(--accent-deep); }
+.tbadge.t-place { background: var(--info-bg); border-color: var(--info-line); color: var(--info); }
+/* CC 徽章是唯一的第四种色调:并发症语义独立于状态色。色值统一收在 --comp-* token
+   (亮/暗由 :root 与 [data-theme=dark] 分别给出),此处不再单独写主题覆盖。 */
+.tbadge.t-cc { background: var(--comp-cc-bg); border-color: var(--comp-cc-line); color: var(--comp-cc); }
+.tbadge.t-check { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn); }
+.tbadge.t-cond { background: var(--bg-2); }
+.ttext { color: var(--ink); }
+.texpr { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+/* 条件行内的集合下钻链接:引擎随条件下发官方集合编号,点击跳「数据一览 → 编码集合」。
+   弱化的行内链接(下划虚线),不与 ✓/✗ 和命中事实争夺注意力 */
+.tset-link {
+  font-family: var(--mono); font-size: 12px; color: var(--accent);
+  background: none; border: none; padding: 0; cursor: pointer;
+  text-decoration: underline dotted; text-underline-offset: 2px;
+}
+.tset-link:hover { text-decoration-style: solid; }
+.tset-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; border-radius: 3px; }
+/* 深色下 --accent(#3e8bc0) 对卡片底仅 4.38:1(12px 正文低于 AA),用提亮一档的钢蓝。
+   不用 color-mix:旧版测量脚本与部分渲染路径不认 color() 现代语法 */
+[data-theme="dark"] .tset-link { color: #7fb8dd; }
+.t-yes { color: var(--ok); font-weight: 700; }
+.t-no { color: var(--ink-3); font-weight: 700; }
+.tdetail { font-size: 12px; color: var(--ink-3); }
+
+/* 未通过条件(依据面板 miss 视图) */
+.miss-row { display: flex; align-items: baseline; gap: 8px; font-size: 13px; }
+.miss-x { color: var(--err); font-weight: 800; }
+.miss-text { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+.miss-expr { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+.miss-detail { color: var(--ink-3); }
+.trow-miss { opacity: .72; }
+.tpath {
+  font-family: var(--mono);
+  font-size: 12px; color: var(--ink-3);
+  background: var(--bg-2); border: 1px solid var(--line);
+  border-radius: var(--radius-data); padding: 0 5px;
+}
+
+/* ============================= 批量 ============================= */
+/* 来源已合并为分段选择(.seg-tabs),单卡切录入方式,结果区共用 */
+.his-batch-btn { white-space: nowrap; }
+.format-help {
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-line);
+  border-radius: var(--radius-data);
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--ink);
+  margin-bottom: 10px;
+}
+.format-help p { margin: 0 0 8px; }
+.format-help b { color: var(--accent-deep); font-weight: 700; }
+.format-help p:last-child { margin-bottom: 0; }
+.field-inline { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+.field-inline select { padding: 6px 9px; border: 1px solid var(--line); border-radius: var(--radius-xs); background: var(--card); color: var(--ink); }
+#batchFile { font-size: 13px; max-width: 340px; }
+.col-help { margin-top: 12px; font-size: 13px; color: var(--ink-2); }
+.col-help summary { cursor: pointer; color: var(--accent-deep); font-weight: 600; }
+.col-help ul { margin: 8px 0 0; padding-left: 20px; }
+.col-help li { margin: 2px 0; }
+/* 批量汇总:分拣计数盘——数据件,零圆角 + 台账格线 */
+.batch-summary {
+  display: grid;
+  /* 固定 4 列:auto-fit 会把 3 个计数各拉成 1/3 宽,20px 数字浮在巨大空框里。
+     计数不足 4 项时由 JS 补空槽(见 batch.js sumChip 调用处),保证格数恒定、数值不因行数变化而移位。 */
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  margin-bottom: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-data);
+  overflow: hidden;
+  background: var(--card);
+}
+/* 占位空槽:读作"这格还没内容",而不是一个没有标题的空白面板 */
+.sum-chip.is-empty { background: var(--bg-2); }
+.sum-chip {
+  background: var(--card);
+  border-right: 1px solid var(--line);
+  border-radius: 0;
+  padding: 10px 14px;
+  font-size: 13px;
+  color: var(--ink-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sum-chip:last-child { border-right: 0; }
+.sum-chip b {
+  margin-left: 0;
+  font-size: 20px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+  color: var(--ink);
+}
+.sum-chip.ok b { color: var(--ok); }
+.sum-chip.err b { color: var(--err); }
+.sum-chip.warn b { color: var(--warn); }
+.card-table { padding: 0; overflow: hidden; }
+.table-wrap { overflow: auto; }
+/* 批量页表格区:独占 .stack 剩余高度并在内部滚动(与 #dataTableCard 同一模式,不再硬编码 46vh) */
+#batchOut { flex: 1 1 0; min-height: 240px; display: flex; flex-direction: column; }
+#batchOut .card-table { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+#batchOut .table-wrap { flex: 1; min-height: 0; }
+/* 数据件:零圆角,表头下双线(方案 A 的病案台账秩序) */
+.data-table { width: 100%; border-collapse: collapse; font-size: 13px; border-radius: var(--radius-data); }
+.data-table th {
+  text-align: left;
+  font-size: 12px;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  font-weight: 700;
+  padding: 10px 13px;
+  border-bottom: 3px double var(--line);
+  background: var(--bg-2);
+  position: sticky;
+  top: 0;
+  white-space: nowrap;
+  z-index: 1;
+}
+.data-table td { padding: 9px 13px; border-bottom: 1px solid var(--line); vertical-align: top; }
+/* 可排序表头:整格是一个按钮(WAI-ARIA 排序模式,自带键盘可达);
+   caret 常驻(未排序时淡色),避免激活后列宽跳动。 */
+.data-table th .th-sort-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  color: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+}
+.data-table th .th-sort-btn:hover { color: var(--ink); }
+.data-table th.is-sorted .th-sort-btn { color: var(--accent-deep); }
+.data-table .th-caret { font-size: var(--text-2xs); opacity: .5; }
+.data-table th.is-sorted .th-caret { opacity: 1; }
+.data-table th .th-sort-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.data-table th.num, .data-table td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+.data-table tr:hover td { background: color-mix(in srgb, var(--accent-soft) 55%, transparent); }
+.data-table .drg-code { font-weight: 700; font-family: var(--mono); }
+/* 状态灯珠:批量表里一列扫下去就知道哪行卡住 */
+.st { display: inline-flex; align-items: center; gap: 7px; white-space: nowrap; font-weight: 700; font-size: 13px; }
+.st::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 20%, transparent); }
+.st.ok { color: var(--ok); }
+.st.warn { color: var(--warn); }
+.st.err { color: var(--err); }
+.cell-dim { color: var(--ink-3); }
+
+/* ============================= 视图切换兜底 ============================= */
+.view[hidden] { display: none !important; }
+#batchOut[hidden] { display: none !important; }
+#dataTableCard[hidden], #dataDrillBar[hidden] { display: none !important; }
+
+/* ============================================================================
+   数据一览(官方配置表 official/*.csv 只读浏览)
+   ========================================================================== */
+
+/* 子标签 */
+.subtabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.subtab {
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--ink-2);
+  border-radius: var(--radius-data);
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: all .16s var(--ease);
+}
+.subtab:hover { border-color: var(--line-strong); color: var(--ink); }
+/* 选中态:深钢蓝实底 —— 与 .seg-item[aria-checked="true"] 同语汇(全应用「选中芯片」只有这一种做法)。
+   原为 --ink 近纯黑:一屏浅色台账里它是唯一的极暗面,读作一个「洞」,
+   白字对比 17.4:1;深色主题下 --ink 翻成近白,更变成一块刺目白块(13.5:1)。
+   归队强调色系后亮色 9.1:1 / 暗色 5.1:1,仍是全表最醒目的落点。 */
+.subtab.is-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 700;
+}
+.subtab .tab-count {
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: var(--radius-data);
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  color: var(--ink-3);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+  transition: all .16s var(--ease);
+}
+.subtab.is-active .tab-count {
+  background: color-mix(in srgb, var(--accent-ink) 20%, transparent);
+  border-color: transparent;
+  color: var(--accent-ink);
+}
+
+/* 表格工具条与分页 */
+.table-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+}
+/* 工具条右侧:每页条数 + 导出(检索框占满左侧剩余空间) */
+.toolbar-right { display: flex; align-items: center; gap: 10px; margin-left: auto; flex: none; }
+.search-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border: 1px solid var(--line-field);
+  border-radius: var(--radius-s);
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--ink);
+  background: var(--card);
+  transition: border-color .15s, box-shadow .15s;
+}
+.search-input::placeholder { color: var(--ink-3); }
+.search-input:focus { outline: none; border-color: var(--accent); box-shadow: var(--ring); }
+
+.pager { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-top: 1px solid var(--line); flex-wrap: wrap; }
+.pager-info { font-size: 13px; color: var(--ink-2); margin: 0 4px; font-variant-numeric: tabular-nums; font-weight: 600; }
+.pager-actions { display: flex; align-items: center; gap: 8px; flex: 1; justify-content: flex-end; min-width: 0; }
+.pager-actions .btn { flex: none; padding: 6px 14px; font-size: 13px; }
+.pager-jump-label { margin: 0; }
+.pager-jump {
+  width: 64px;
+  min-width: 0;
+  padding: 5px 7px !important;
+  font-size: 13px !important;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.mono { font-family: var(--mono); font-size: 13px; }
+.cell-code { font-weight: 700; color: var(--accent-deep); white-space: nowrap; font-family: var(--mono); }
+.cell-muted { color: var(--ink-3); }
+
+/* 数据一览:表源说明 + 下钻筛选条 */
+.data-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.data-meta-desc { font-weight: 700; color: var(--ink); }
+.drill-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border-bottom: 1px solid var(--line);
+  background: var(--accent-soft);
+  font-size: 13px;
+}
+.drill-text { color: var(--ink-2); overflow-wrap: anywhere; }
+.drill-text b { color: var(--accent-deep); font-weight: 700; }
+.drill-spacer { flex: 1; }
+
+/* 可下钻单元:外键列与 DSL 内的集合编号 */
+.cell-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  font-weight: 700;
+  color: var(--accent-deep);
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+.cell-link:hover { color: var(--accent); text-decoration-style: solid; }
+.cell-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 3px; }
+.dsl-set { font-family: var(--mono); font-size: 13px; }
+.cell-dsl { max-width: 520px; white-space: normal; word-break: break-word; line-height: 1.7; }
+/* 入组条件 DSL 默认折 2 行:个别超长条件曾把行高撑到 218px(常态 48px),扫读退化为逐行阅读。
+   用 display:block + max-height 而非 -webkit-line-clamp —— 单元格内混有可下钻的集合编号按钮
+   (inline-block),-webkit-box 会把它们变成块级子项、拆散行内文本流。
+   ⚠ max-height / overflow 对「非替换行内元素」无效,而这个节点是 span —— 不显式
+   写成 display:block,下面两行就是死代码(实测:折叠前后行高都停在 252px)。
+   max-height = 行高 1.55 × 2 = 3.1em,正好两行,边界落在行间不会切出半行残字。 */
+.dsl-text { display: block; line-height: 1.55; max-height: 3.1em; overflow: hidden; }
+.cell-dsl.is-open .dsl-text { max-height: none; }
+.dsl-toggle { margin-top: 3px; display: inline-block; font-size: 12px; }
+
+/* ---- 分组主干树(MDC → ADRG → DRG):左目录树 + 右详情 ----
+   目录树是"层级化的导航件":缩进表达层级,一行只放 编码 + 名称,内容全部让给右栏。
+   两栏零圆角 + 一道发丝线分隔,各自内滚(单屏不破版)。层级徽标只在详情头部出现 ——
+   那里是"内容",需要明示这行是什么;左树的层级问题交给缩进回答。 */
+.tree-split { flex: 1; min-height: 0; display: flex; overflow: hidden; }
+.tree-side {
+  flex: none;
+  width: 320px;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+  border-right: 1px solid var(--line);
+  padding: 6px 0;
+}
+.tree-note { padding: 14px; color: var(--ink-3); font-size: 13px; }
+.tree-item { cursor: pointer; }
+.tree-item .tree-main {
+  display: flex; align-items: center; gap: 8px; min-width: 0;
+  padding: 6px 10px;
+  padding-left: calc(10px + var(--tree-level, 0) * 16px);
+}
+.tree-item:hover .tree-main { background: var(--wash); }
+/* 选中行:浅底 + 左缘一道强调色竖条(与下钻条同一语言) */
+.tree-item.is-selected .tree-main {
+  background: var(--accent-soft);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+.tree-item:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tree-toggle {
+  flex: none;
+  width: 18px; height: 18px; padding: 0;
+  border: 0; background: none;
+  color: var(--ink-3);
+  font-size: var(--text-xs); line-height: 1;
+  border-radius: var(--radius-data);
+  cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.tree-toggle:hover { color: var(--accent-deep); background: var(--wash); }
+.tree-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.tree-toggle.is-leaf { cursor: default; pointer-events: none; }
+.tree-code {
+  flex: none;
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-deep);
+}
+.tree-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 右栏详情:选中节点的阅读区 */
+.tree-detail { flex: 1; min-width: 0; overflow-y: auto; scrollbar-gutter: stable; padding: 12px 16px 16px; }
+.tree-detail-head {
+  display: flex; align-items: center; gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--line);
+}
+.tree-detail-head .lv-tag { flex: none; width: 46px; }
+.tree-detail-name { font-size: 14px; font-weight: 700; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tree-detail-crumbs { margin-top: 8px; font-size: 12px; color: var(--ink-3); }
+.tree-detail-label {
+  margin: 14px 0 6px;
+  font-size: 12px; font-weight: 700;
+  color: var(--ink-3);
+  text-transform: uppercase; letter-spacing: .04em;
+}
+.tree-detail-dsl { font-size: 13px; }
+.tree-detail-dsl .cell-dsl { max-width: none; }
+/* 下级清单:台账式一行一条,点击即选中(左树同步展开祖先),不必回左树找箭头 */
+.tree-kids { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+.tree-kid {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0; border-bottom: 1px solid var(--line);
+  background: none;
+  font: inherit; font-size: 13px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.tree-kid:hover { background: var(--wash); }
+.tree-kid:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tree-kid .tree-name { flex: 1; }
+
+/* 层级徽标(详情头部用):MDC 强调色、ADRG 中性、DRG 次级灰,与目录树的缩进层级互为印证 */
+.lv-tag {
+  display: inline-block;
+  padding: 1px 4px;
+  border-radius: var(--radius-data);
+  background: var(--wash);
+  color: var(--ink-2);
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  text-align: center;
+  letter-spacing: .02em;
+}
+.lv-tag.lv-mdc { background: var(--accent-soft); color: var(--accent-deep); }
+.lv-tag.lv-drg { color: var(--ink-3); }
+/* 编码集合树的两级:类型=强调色(与 MDC 同档,它是这一层的骨架),集合=中性 */
+.lv-tag.lv-settype { background: var(--accent-soft); color: var(--accent-deep); }
+
+/* ---- 编码集合树:成员清单与跨集合检索命中 ----
+   集合没有官方名称,左树行尾用成员数代替名称(见 .tree-meta);成员清单是右栏的阅读区,
+   台账式一行一条(编码 + 名称),不分页 —— 按「加载更多」逐批追加,始终标明已加载/总数。 */
+.tree-meta {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  color: var(--ink-3);
+}
+.member-head {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+}
+.member-head .tree-detail-label { margin-bottom: 6px; }
+.member-list { display: flex; flex-direction: column; border-top: 1px solid var(--line); }
+.member-row {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--line);
+  font-size: 13px;
+}
+.member-row .tree-code { font-weight: 600; }
+.member-row .tree-name { flex: 1; min-width: 0; color: var(--ink-2); }
+.member-more { margin-top: 10px; }
+/* 检索命中行:与「下级清单」同形,但点下去的结果是"跳到该集合"(见 gotoSet) */
+.tree-hit {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  border: 0; border-bottom: 1px solid var(--line);
+  background: none;
+  font: inherit; font-size: 13px;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+}
+.tree-hit:hover { background: var(--wash); }
+.tree-hit:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.tree-hit .tree-name { flex: 1; color: var(--ink-2); }
+.tree-setid {
+  flex: none; width: 92px;
+  font-family: var(--mono);
+  font-size: var(--text-xs);
+  color: var(--ink-3);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+
+/* ---- 编码集合的"这是什么"说明 ----
+   集合号就是集合的名字,官方没给中文名;不解释,一线用户读不懂 DI_B00 与那串 ICD 编码。
+   说明本身也算"数据",故用台账式项目符 + 发丝线方格,不用气泡 / 图标 / 强调底色。 */
+.tree-intro {
+  margin: 0; padding-left: 16px;
+  font-size: 13px; line-height: 1.65;
+  color: var(--ink-2);
+}
+.tree-intro li { margin-bottom: 6px; }
+.tree-intro li::marker { color: var(--ink-3); }
+.tree-intro li:last-child { margin-bottom: 0; }
+/* 入组条件角色词对照:等宽 token + 中文,一格一词,可换行 */
+.set-vars { display: flex; flex-wrap: wrap; gap: 6px 10px; }
+.set-var {
+  display: inline-flex; align-items: baseline; gap: 5px;
+  padding: 2px 6px;
+  border: 1px solid var(--line);
+  background: var(--wash);
+  font-size: 12px; color: var(--ink-2);
+}
+.set-var .tree-code { font-size: 12px; font-weight: 600; color: var(--ink); }
+/* 集合成员清单前的一句定位(共 .tree-note 的观感,但不需要它的留白) */
+.set-member-note { padding: 8px 0 0; font-size: 12px; }
+
+/* ============================= 加载态 ============================= */
+/* 加载态落在卡槽里:与结果卡同一位置同一形态,不跳版 */
+.loading-card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  padding: 28px 24px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  color: var(--ink-3);
+  font-size: 14px;
+}
+.loading-spinner {
+  width: 20px; height: 20px;
+  border: 2.5px solid var(--line-strong);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  flex: none;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================= 打印 ============================= */
+@media print {
+  body { height: auto; overflow: visible; background: #fff !important; }
+  .topbar, .trace-toggle, #resetBtn,
+  .copy-btn, .rc-details, .rc-path-acts, .evi-tabs, .evi-close, .tl-view-switch, .tl-shell-head,
+  .rc-lamps { display: none !important; }
+  /* 打印要给出费用结论:费用卡不随 .rc-details 一起隐藏,并强制展开折叠体(不依赖用户事先展开) */
+  .rc-details.fee-panel { display: block !important; }
+  .fee-panel > summary { display: none; }
+  .fee-panel > .details-body { display: block !important; }
+  .result-slot { background: none; border: 0; box-shadow: none; padding: 0; }
+  .rc-evi { border: 0; background: transparent; padding: 0; }
+  .rc-evi-head { border-bottom: 0; padding: 4px 0; }
+  .page { padding: 0; max-width: none; overflow: visible; }
+  .split { height: auto; grid-template-columns: 1fr; }
+  .col-form, .col-result { overflow: visible; }
+  .result-card, .card { box-shadow: none; border: 1px solid #ccc; }
+  .rc-code { background: none; color: #000; padding-left: 0; }
+  .rc-code::before { display: none; }
+}
+
+/* ============================================================================
+   分组依据:竖向时间轴 / 横链(单病例视图)
+   时间轴读作分拣轨道:每帧一个站点,落位编码是站牌
+   ========================================================================== */
+.rc-timeline {
+  --tl-line: var(--line);
+  position: relative;
+  padding-left: 6px;
+}
+.tl-node {
+  --tl-pad: 6px;
+  --tl-gap: 10px; /* 帧间距:轨道补段(见 :not(:last-child)::before)与帧 margin 共用,防改一处漏一处 */
+  position: relative;
+  display: flex;
+  gap: 10px;
+  padding: var(--tl-pad) 0;
+}
+/* 帧间分界:只靠留白(下帧 padding-top + margin + 上帧 padding-bottom ≈ 30px)。
+   帧首行(13px 次级灰)比帧内值行(22px 深墨/绿)弱,空白必须足够才能分帧。
+   横线画过两种都撤了:通宽 border-top 穿过轨道,把"从上到下的同一条轨道"切成
+   若干独立的块;只画内容列的 ::after 发丝线仍嫌重 —— 分帧信息轨道线已经给了,
+   横线是第二重强调,删,换纯空白。 */
+.tl-node + .tl-node {
+  --tl-pad: 10px;
+  margin-top: var(--tl-gap);
+}
+/* 编码标准化节点:信息密度低,padding 更紧,视觉上让位于判定节点 */
+.tl-node-maps { --tl-pad: 2px; padding: var(--tl-pad) 0; }
+.tl-node-maps .map-facts { margin-top: 2px; }
+.tl-node::before {
+  /* 连接线:从上一节点延伸到当前节点。1px 发丝 —— 它是轨道,不是元件。
+     left 取 9.5px:序号环宽 20px,环心在 10px 处。 */
+  content: "";
+  position: absolute;
+  left: 9.5px;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--tl-line);
+}
+/* 首尾各自从环心起止:环心 = padding-top + 环半径 10px(--tl-pad 随帧间距变化,故用变量算)。
+   非末节点的轨道向下补一段 --tl-gap:帧间 margin 是留白、不属于任何节点盒子,
+   两段 ::before 在 margin 处会接出 10px 断点(用户实测反馈);补段恰好盖过 margin,
+   与下一节点顶边无缝相接。 */
+.tl-node:first-child::before { top: calc(var(--tl-pad) + 10px); }
+.tl-node:not(:last-child)::before { bottom: calc(-1 * var(--tl-gap)); }
+.tl-node:last-child::before { bottom: auto; height: calc(var(--tl-pad) + 10px); }
+.tl-node:only-child::before { display: none; } /* 只有一帧时没有"下一站",不留孤立线段 */
+/* 序号环:自绘「数字 + 圆环」,不再用圈码字符 ①②③ —— --mono 的 IBM Plex Mono 没有这些
+   字形,会回退到系统字体(实测字宽仅 6.6px,形状跨平台还不一致),而它恰恰是「第几步」的
+   载体,却是全行最弱的元素。自绘后它同时承担轨道站点灯 —— 原先序号与 .tl-dot 是两个圆,
+   一条三步链上并排 2×3 个圆点,各干一半。
+   站点灯语义不变:途经站是细环,落点站才点亮(状态色由节点上的 tone-* 类决定)。 */
+.tl-idx {
+  flex: none;
+  align-self: flex-start;
+  /* 压住轨道线,而不是被轨道线穿过:轨道线(.tl-node::before)是绝对定位元素,
+     按绘制顺序排在所有未定位内容之上,会把环内的数字与环的下半弧整段切掉
+     (环虽有 --card 底色,但底色只在"未定位的普通流"层,同样在线下面)。
+     环是站点,必须是轨道穿不过去的那一层;显式 z-index 而不只靠 position —— 二者
+     在层叠顺序上都够用,写全是为了下次改这两条规则的人一眼看到依赖关系。 */
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border: 1.5px solid var(--ink-3);
+  border-radius: 50%;
+  background: var(--card);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--ink-2);   /* 比步骤名的 --ink-3 提一档:环里的小字要经得起看,8.6:1 留足余量 */
+}
+/* 站点灯语义:途经站保持中性灰环灰字 —— 三个绿环排一列没有信息量;
+   状态色只出现在落点站(DRG 实心,见下),到没到站一眼可辨。 */
+/* 落点站(DRG)实心:整条链唯一「亮起来」的灯 */
+.tl-node-drg.tone-ok .tl-idx { background: var(--ok); border-color: var(--ok); color: var(--card); }
+.tl-node-drg.tone-warn .tl-idx { background: var(--warn); border-color: var(--warn); color: var(--card); }
+.tl-node-drg.tone-err .tl-idx { background: var(--err); border-color: var(--err); color: var(--card); }
+.tl-body { flex: 1; min-width: 0; }
+.tl-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+/* 步骤头:序号环 + 层级标签 + 动作短语(② ADRG 确定核心组)。
+   头部是「怎么来的」,整条走次级灰 —— 强调色只留给可交互元素与落点编码。
+   注意:.tl-idx 的完整样式在上方(序号环,含自绘圆环与 tone 分级),此处不再重复声明 ——
+   曾在此处另写一条同选择器规则,靠"后出现者胜"把上方的字号与颜色静默改掉。
+   (同类缺陷:原先 2478 行还有一条被 .tl-head .tl-label 全覆盖的死规则。) */
+/* 层级标签:浅灰小芯片(MDC / ADRG / DRG)。曾走「4ch 定宽格 + 右对齐」来对齐后面的动作
+   短语与依据入口,代价是格内留白随层级长短变化、入口被 208px 列钉死;改芯片后短语与入口
+   随内容自然流动 —— 三帧的入口不再同 x,换头部紧凑,接受。 */
+.tl-head .tl-tag {
+  flex: none;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background: var(--bg-2);
+  font-family: var(--mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  line-height: 1.4;
+  color: var(--ink-2);
+}
+.tl-head .tl-tag:empty { display: none; } /* 编码标准化帧无层级,不发空芯片 */
+/* 步骤名:动作短语(编码标准化/按主要诊断归类/确定核心组/细分组落位),随芯片自然流动。
+   深墨色:头部行是「这一步在做什么」的主干,不再退到次级灰让位给后面的落位编码。 */
+.tl-head .tl-label { flex: none; font-size: 13px; font-weight: 500; color: var(--ink); }
+.tl-head .tl-evi-btn { margin-left: 8px; }
+/* 编码 + 中文名标题行:MDC/ADRG 官方名随明细异步补齐,DRG 用组名。
+   本行是每帧的落位结果(MDC / ADRG / DRG),用最大字号 + 最重字重压住整条时间轴 */
+.tl-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 1px;
+}
+/* 三级递进:MDC 大类(17px)→ ADRG 核心组(17px)→ DRG 细分组(22px/最重)。
+   前两级同字号:它们是"路径经过的坐标",真正的结论在最后一站 —— 越往下越具体,
+   落点帧成为全轴最响的一处。落点帧不带中文组名(与结果卡标题 .rc-name 逐字重复)。 */
+.tl-code {
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 17px;
+  letter-spacing: .03em;
+  color: var(--ink);
+}
+.tl-node-drg .tl-code { font-size: 22px; font-weight: 700; color: var(--ink); }
+.tl-zh { font-size: 13px; font-weight: 500; color: var(--ink-2); }
+.tl-zh:empty { display: none; } /* 中文名异步未补齐前不占位 */
+/* 判定结论行:编码下平铺的一句"为什么入这一级"(timelineModel.s.why,后端结构化事实拼装)。
+   次级灰小字 —— 它是读解,不是结论本身,不与上一行的落位编码抢重。 */
+.tl-why { margin-top: 2px; font-size: 13px; line-height: 1.55; color: var(--ink-2); }
+/* 「落位」芯片:成功态 DRG 帧编码旁的状态章,与实心站点灯同语义(到站) */
+.tl-land {
+  flex: none;
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+/* 状态色只染落点站:途经的站(已经过的门)不需要再喊一遍「成功」 */
+.tl-node-drg.tone-ok .tl-code { color: var(--ok); }
+.tl-node-drg.tone-warn .tl-code { color: var(--warn); }
+.tl-node-drg.tone-err .tl-code { color: var(--err); }
+.tl-body .evi-facts { margin-top: 4px; }
+/* 「判定结论」行:依据展开区首行,一句话讲清"为什么入这一级"再铺规则原文;
+   文案由后端结构化事实拼装(命中码/官方名/档位明细),不涉 DSL 解析 */
+.ev-concl-text { color: var(--ink); font-weight: 500; }
+/* 证据链合并行:规则短语 → 事实 ✓ 同行流式(原先两条各占一行、标签重复,视觉碎) */
+.ev-pair { flex-wrap: wrap; }
+.ev-arrow { flex: none; font-size: 12px; color: var(--ink-3); }
+/* 详细日志顶部摘要行:次级色小字,只给体量预期(共 N 条:命中 X · 未通过 Y) */
+.evi-log-sum { display: flex; align-items: baseline; gap: 8px; padding: 2px 0 6px; border-bottom: 1px solid var(--line); margin-bottom: 6px; }
+/* 条件树容器行(「需同时满足以下 N 项」):结构小标题,略加重让"以下 N 项"与缩进子项的
+   从属关系一眼可见;同一颜色仅加字重,浅/深主题对比度都不变 */
+.trow-cont .texpr { font-weight: 600; }
+/* 摘要行右侧导读:第一次见到一列灰 ✗ 行最易问"这是出错了吗",先答这一句 */
+.evi-log-hint { margin-left: auto; font-size: 12px; color: var(--ink-3); text-align: right; }
+/* 同因合并的组码芯片行:N 个组共享同一句原因,芯片列码、后跟原因 —— 不再逐行抄同一句话 */
+.log-why { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 6px; }
+.log-codes { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.log-code {
+  font-size: 11px; line-height: 1.5; padding: 0 5px;
+  background: var(--bg-2); border: 1px solid var(--line); border-radius: 4px;
+  color: var(--ink-2); white-space: nowrap;
+}
+/* 「下一步」提示行(断点态)始终可见:可操作,不进折叠 */
+.tl-body > .ev-rows { margin-top: 5px; }
+
+/* 判定依据:动作短语后的弱化文字入口,展开/收起位置恒定。
+   不描边不加底 —— 依据是次级入口,描边药丸会跟同行的落位编码抢视线(示意稿复核后弱化)。
+   证据链作为兄弟块落在动作行下方,进左侧细轨,层级低于落位编码。
+   右对齐靠 margin-left:auto,实际落点由容器宽度决定 ——
+   横链的面板头 .tl-panel-head 铺满面板,顶到最右是对的;
+   竖轴的帧头 .tl-head 里则由 .tl-head .tl-evi-btn 改回跟在短语后 8px:
+   结果列固定 821px,原样顶到最右会与内容末端空出 424~615px,入口孤悬在右半边。 */
+.tl-evi-btn {
+  margin-left: auto;
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.6;
+  color: var(--ink-3);
+  background: transparent;
+  border: 0;
+  padding: 1px 0 1px 4px;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: color .12s var(--ease);
+}
+.tl-evi-btn::after { content: "▸"; font-size: var(--text-2xs); transition: transform .15s var(--ease); }
+.tl-evi-btn.is-open::after { transform: rotate(90deg); }
+.tl-evi-btn:hover { color: var(--accent-deep); }
+.tl-evi-btn:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; border-radius: 4px; }
+.ev-rows.evi-rows { margin-top: 4px; padding-left: 10px; border-left: 2px solid var(--line); }
+
+/* 详细日志:依据展开区「内部」的第二层入口(落在依据行之后)。比「判定依据」再降一档颜色、
+   不抢最右端(那里是依据入口的位置),同用 ▸ 表明可展开 —— 它是"看细节"的动作,不是并列的第二个入口。
+   日志块复用 .trace / .tstep 那套竖轨与行排版(与路径面板「引擎日志」同源),只把间距与字号收紧一档:
+   日志行数远多于依据行,沿用主面板的 6px 间距 + 13px 字号会让一次展开多撑出小半屏。 */
+.tl-evi-log-btn {
+  align-self: flex-start; /* 在 .ev-rows 的纵向 flex 里不拉伸,保持小字按钮形态 */
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.6;
+  color: var(--ink-3);
+  background: transparent;
+  border: 0;
+  padding: 1px 0;
+  cursor: pointer;
+  white-space: nowrap;
+  user-select: none;
+  transition: color .12s var(--ease);
+}
+.tl-evi-log-btn::after { content: "▸"; font-size: var(--text-2xs); transition: transform .15s var(--ease); }
+.tl-evi-log-btn.is-open::after { transform: rotate(90deg); }
+.tl-evi-log-btn:hover { color: var(--accent-deep); }
+.tl-evi-log-btn:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; border-radius: 4px; }
+.evi-log { margin-top: 2px; min-width: 0; }
+.evi-log-body { gap: 4px; padding-left: 11px; }
+.evi-log-body .tstep { font-size: 12px; }
+/* 未命中行在本日志里的降调比全局 .trow-miss(.72) 轻一档:详细日志的主角恰恰是这些 ✗ 行
+   (「逐档试过、哪档没过」),而 .72 实测只有约 4.0:1(浅色),12px 正文低于 WCAG AA 的 4.5:1。
+   .85 实测 5.40:1(浅)/ 6.57:1(深) —— 保留"失败行更淡"的层次,同时回到 AA 以内。
+   只改本容器,既有「引擎日志」面板的观感不变(那里 ✗ 行量大且多为噪音,重降调是刻意的)。 */
+.evi-log-body .trow-miss { opacity: .85; }
+/* 事实/原因文字在本容器内提一档(--ink-3 → --ink-2):全局 --ink-3 在 12px 下是 5.19:1,
+   再叠未命中行的 .85 降调就掉到 4.36:1(浅) / 4.47:1(深),低于 AA 4.5:1,而这里的事实行
+   恰恰是"为什么没过"的答案。与条件短语同色不损辨识 —— 后者是等宽字体,本来就不是靠颜色区分。 */
+.evi-log-body .tdetail { color: var(--ink-2); }
+
+/* ── 详细日志:块化(结论行 + 明细) ──
+   每块 = 引擎的一个判定单元:流程行是结论,紧随其后的条件行是支撑它的明细。
+   块内贴紧、块间留距,让"一句话结论"与"它的条件"在视觉上成组,而不是一列等距行 —— 等距是
+   平铺日志读不出结构的根因(142 行里结论与噪音同权)。 */
+.logunit { display: flex; flex-direction: column; gap: 3px; }
+.logunit + .logunit { margin-top: 6px; }
+.logunit-detail {
+  display: flex; flex-direction: column; gap: 3px;
+  margin-left: 10px; padding-left: 9px; border-left: 2px solid var(--line);
+}
+/* 合并块的结论行:「MDCB:40 个核心组」+ 主因,整行可点开逐组明细 */
+.logmiss-head {
+  display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap;
+  font: inherit; font-size: 12px; text-align: left;
+  background: none; border: 0; padding: 1px 0; cursor: pointer; color: inherit;
+}
+.logmiss-head .ttext { color: var(--ink-2); }
+.logmiss-caret { font-size: var(--text-2xs); color: var(--ink-3); transition: transform .15s var(--ease); }
+.logmiss-head.is-open .logmiss-caret { transform: rotate(90deg); }
+.logmiss-head:hover .ttext { color: var(--accent-deep); }
+.logmiss-head:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 2px; border-radius: 4px; }
+
+/* ── 判定清单卡:复杂候选(多条件/多分支)的明细不再摆树,直接答三件事 ──
+   要什么(清单行)、差什么(✗ 行的事实)、差多少(头部「差 N 项」);
+   容器措辞(需同时满足 N 项/满足任一)不再出现 —— 结构语言换成清单语言。
+   底色用 --bg-2 与日志行的白底分层;勾/叉行用语义底色,深浅主题走同一组 token。 */
+.vcard {
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 6px 8px; background: var(--bg-2);
+  border: 1px solid var(--line); border-radius: var(--radius-xs);
+}
+.vcard-head { display: flex; align-items: baseline; gap: 8px; }
+.vcard-gap { font-size: 12px; font-weight: 700; color: var(--err); }
+.vcard-paths { margin-left: auto; font-size: var(--text-sm); color: var(--ink-3); }
+.vcard-foot { font-size: var(--text-sm); color: var(--ink-3); border-top: 1px solid var(--line); padding-top: 4px; }
+.vrow { display: flex; align-items: baseline; gap: 6px; padding: 3px 6px; border-radius: 4px; font-size: 12px; }
+.vrow-ok { background: var(--ok-bg); }
+.vrow-miss { background: var(--err-bg); }
+.vmark { flex: none; font-weight: 700; }
+.vrow-ok .vmark { color: var(--ok); }
+.vrow-miss .vmark { color: var(--err); }
+.vexpr { color: var(--ink); }
+.vdetail { color: var(--ink-2); }
+/* 「距入组最近」摘要行:一句话给全局坐标,放在体量摘要之下、明细块之前 */
+.evi-log-near { display: flex; align-items: baseline; gap: 8px; padding: 0 0 6px; }
+.evi-log-near .ev-fact { color: var(--ink-2); }
+
+/* ── 分组依据:视图壳(竖轴/横链可切换) ── */
+.tl-shell-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+.tl-view-switch {
+  display: inline-flex;
+  gap: 2px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-data);
+  padding: 2px;
+  box-shadow: var(--rail-in);
+}
+.tl-view-switch button {
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.6;
+  color: var(--ink-3);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-data);
+  padding: 2px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background .12s, color .12s;
+}
+.tl-view-switch button:hover { color: var(--ink); }
+.tl-view-switch button.is-active {
+  background: var(--card);
+  color: var(--accent-deep);
+  font-weight: 700;
+  box-shadow: 0 1px 3px rgba(15,27,39,.12);
+}
+.tl-view-switch button:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 1px; }
+
+/* ── 分组依据:横链视图(紧凑单行,段即按钮,判定依据收进段下展开面板) ── */
+.tl-chain {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.tl-seg-arrow {
+  align-self: center;
+  flex: none;
+  color: var(--ink-3);
+  font-size: 14px;
+  line-height: 1;
+  user-select: none;
+}
+.tl-seg {
+  font-family: inherit;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 13px 7px;
+  background: var(--bg-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-data);
+  cursor: pointer;
+  text-align: left;
+  transition: background .12s, border-color .12s, box-shadow .12s;
+}
+.tl-seg-top { display: inline-flex; align-items: baseline; gap: 6px; flex-wrap: wrap; min-width: 0; }
+/* 段编码即该步落位结果(MDC / ADRG / DRG):横链里同样做大做重,副行让位 */
+.tl-seg-code { font-family: var(--mono); font-weight: 600; font-size: 15px; color: var(--ink-2); letter-spacing: .03em; }
+.tl-seg-drg .tl-seg-code { font-weight: 700; color: var(--ink); }
+/* 命中状态记号与编码随色调着色:绿=通过,黄=歧义,红=未入组 */
+/* 状态色只染落点段 —— 原先把 tone-ok 撒到每一段,一条横链上亮起 3 个绿码,主次全平 */
+.tl-seg-drg.tone-ok .tl-seg-code, .tl-seg-drg.tone-ok .tl-seg-state { color: var(--ok); }
+.tl-seg.tone-warn .tl-seg-code, .tl-seg.tone-warn .tl-seg-state { color: var(--warn); }
+.tl-seg.tone-err .tl-seg-code, .tl-seg.tone-err .tl-seg-state { color: var(--err); }
+.tl-seg-state { font-size: 12px; font-weight: 700; }
+/* 段中文名/副行:超长截断,完整内容走 title 悬浮 */
+.tl-seg-zh {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  max-width: 13em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tl-seg-sub {
+  font-size: 12px;
+  color: var(--ink-3);
+  max-width: 15em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 末段即落位结果:整段着色,一眼读出成功/歧义/失败 */
+.tl-chain .tl-seg:last-of-type { background: var(--ok-bg); border-color: var(--ok-line); }
+.tl-chain .tl-seg:last-of-type.tone-warn { background: var(--warn-bg); border-color: var(--warn-line); }
+.tl-chain .tl-seg:last-of-type.tone-err { background: var(--err-bg); border-color: var(--err-line); }
+.tl-chain .tl-seg:hover { border-color: var(--accent-line); background: var(--accent-soft); }
+.tl-seg:focus-visible { outline: 2px solid var(--accent-line); outline-offset: 1px; }
+/* 当前展开段:下划记号,与竖轴视图的 path-seg.is-cur 同语言 */
+.tl-chain .tl-seg.is-active {
+  border-color: var(--accent-line);
+  background: var(--accent-soft);
+  box-shadow: inset 0 -2px 0 var(--accent);
+}
+/* 段下展开面板:与统一依据面板(rc-evi)同一容器语言 */
+.tl-seg-panel {
+  margin-top: 8px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-data);
+  background: var(--bg-2);
+  padding: 10px 12px 12px;
+  animation: fade-in .18s var(--ease);
+}
+.tl-panel-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.tl-panel-code { font-family: var(--mono); font-weight: 700; font-size: 14px; color: var(--accent-deep); }
+.tl-panel-title { font-size: 13px; font-weight: 700; color: var(--ink-2); }
+.tl-seg-panel .evi-facts, .tl-seg-panel .map-facts { margin-top: 2px; }
+/* 条件内容→命中事实证据链行:标签 + 内容成对,可换行不撑破面板。
+   层级下压一档(12px / --ink-2),不与上面的 MDC·ADRG·DRG 落位结果抢视线 */
+.ev-rows { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.ev-row { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.ev-k { flex: none; font-size: 12px; font-weight: 500; color: var(--ink-3); }
+.ev-expr { font-size: 12px; color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; font-family: var(--mono); }
+.ev-fact { font-size: 12px; color: var(--ink-2); min-width: 0; overflow-wrap: anywhere; }
+.ev-ck { color: var(--ok); font-weight: 700; }
+/* 断点态「下一步」:可操作提示用警示色,一线先知道改什么。
+   建议可能是多条(原因指引 / 排除表命中 / 最接近的候选),故用容器逐行排,不再挤进单个 .ev-fact。 */
+.ev-next-box { flex: 1; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ev-next-line { font-size: 12px; font-weight: 600; color: var(--warn); overflow-wrap: anywhere; }
+
+/* 时间轴编码标准化节点映射 chip */
+.map-chip { display: inline-flex; align-items: baseline; gap: 2px; font-size: 12px; }
+.map-orig-code { color: var(--ink-3); text-decoration: line-through; }
+.map-chip .map-arrow { color: var(--accent-deep); }
+.map-target-code { color: var(--accent-deep); font-weight: 700; }
+
+/* 动效偏好:尊重系统「减少动态效果」 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+
+/* ============================================================================
+   批量结果表:列组织与密度(2026-09-12 重排)
+   口径:病例与分组结果各字段**分别成列、不合并** —— 合并成一句话就没法按列排序/筛选,
+   也读不出"哪个诊断把这条顶到了这一档"。代价是列多,所以靠两件事保证可读:
+   ① 固定列给足内容宽度、弹性列吃余量,超宽时整表横向滚动(不靠截断藏信息);
+   ② 行高压到 34px、行操作悬停显形,把省下的高度还给行数。
+   ============================================================================ */
+#batchTable { font-size: var(--text-md); }
+#batchTable th, #batchTable td { padding: 5px 8px; white-space: nowrap; }
+#batchTable tbody tr { height: 34px; }
+#batchTable .col-line { width: 44px; color: var(--ink-3); }
+#batchTable .col-recno { font-family: var(--mono); }
+#batchTable .col-sex, #batchTable .col-age { width: 44px; }
+#batchTable .col-dx, #batchTable .col-drg { font-family: var(--mono); }
+#batchTable .col-status { width: 78px; }
+#batchTable .col-mdc, #batchTable .col-adrg { width: 54px; font-family: var(--mono); color: var(--ink-2); }
+#batchTable .col-drg { width: 68px; }
+#batchTable .col-rw, #batchTable .col-cost { width: 58px; }
+#batchTable .col-dxs, #batchTable .col-proc, #batchTable .col-gname { max-width: 200px; }
+/* 编码明细单行显示:一行放不下几十条码,完整清单在展开详情与导出 CSV 里 */
+#batchTable .code-line { display: block; overflow: hidden; text-overflow: ellipsis; font-family: var(--mono); }
+/* 行操作悬停显形:常驻会白占约 90px,而"复制"是低频动作("展开"始终可见,它才是引导) */
+#batchTable .row-copy-cell { width: 44px; text-align: right; }
+#batchTable .copy-btn { opacity: 0; transition: opacity .12s; }
+#batchTable tbody tr:hover .copy-btn, #batchTable tbody tr:focus-within .copy-btn { opacity: 1; }
+
+/* ============================================================================
+   批量行详情面板
+   展开要回答的是两个问题:「这条为什么是这个结果」与「我该去核对什么」。
+   所以内容必须是列表里放不下的那些(全部诊断/手术、入出院时间、编码映射、被排除的并发症),
+   而不是把列表"说明"列那句话再抄一遍。
+   ============================================================================ */
+.batch-detail {
+  padding: 12px 14px;
+  border-left: 3px solid var(--line-strong);   /* 左侧色条:与所在行做视觉绑定 */
+  background: var(--bg-2);
+}
+.bd-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.bd-head-code { font-family: var(--mono); font-weight: 600; }
+.bd-head-name { color: var(--ink-2); }
+.bd-head-sp { flex: 1; }
+.bd-close {
+  border: 1px solid transparent; background: transparent; cursor: pointer;
+  color: var(--ink-3); font-size: var(--text-sm); padding: 2px 8px; border-radius: var(--radius-xs);
+}
+.bd-close:hover { border-color: var(--line); color: var(--ink); }
+/* 判定链:主诊断 → MDC → ADRG → DRG。三段全摆出来才看得出"卡在哪一步" */
+.bd-chain { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 14px; }
+.bd-step { border: 1px solid var(--line); border-radius: var(--radius-data); padding: 3px 8px; background: var(--bg); }
+.bd-step-k { color: var(--ink-3); font-size: var(--text-xs); margin-right: 6px; }
+.bd-step-v { font-family: var(--mono); }
+.bd-step.is-ok { border-color: var(--ok-line); background: var(--ok-bg); }
+.bd-step.is-warn { border-color: var(--warn-line); background: var(--warn-bg); }
+.bd-step.is-err { border-color: var(--err-line); background: var(--err-bg); }
+.bd-sec { margin-bottom: 14px; }
+.bd-sec-t { margin: 0 0 6px; font-size: var(--text-sm); font-weight: 600; color: var(--ink-3); }
+.bd-grid { display: grid; grid-template-columns: 84px 1fr; gap: 4px 14px; align-items: start; }
+.bd-k { color: var(--ink-3); font-size: var(--text-md); }
+.bd-v { min-width: 0; overflow-wrap: anywhere; }
+.bd-cnt { color: var(--ink-3); font-size: var(--text-sm); margin-right: 6px; }
+.bd-codes { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.bd-code { font-family: var(--mono); background: var(--wash); border-radius: var(--radius-data); padding: 1px 6px; }
+.bd-why .bd-p { margin: 0; }
+.bd-advice { margin: 0; padding-left: 18px; color: var(--ink-2); }
+.bd-advice li { margin-bottom: 2px; }
+.bd-folds { border-top: 1px solid var(--line); padding-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.bd-fold > summary { cursor: pointer; color: var(--ink-3); font-size: var(--text-md); }
+.bd-fold[open] > summary { color: var(--ink); margin-bottom: 6px; }
+.bd-trace { margin: 0; padding-left: 20px; color: var(--ink-2); font-size: var(--text-sm); }
+.bd-trace li { margin-bottom: 2px; }
+
+
+/* 批量上传进度:轨道用结构线,填充用强调色;零圆角与数据件同语言(它是"数据在流动"的刻度,不是控件) */
+.batch-progress { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
+.bp-track {
+  flex: 1; height: 6px; background: var(--wash);
+  border: 1px solid var(--line); border-radius: var(--radius-data); overflow: hidden;
+}
+.bp-fill { display: block; height: 100%; width: 0; background: var(--accent); transition: width .18s linear; }
+.bp-fill.is-unknown { background: var(--line-strong); }
+.bp-text { white-space: nowrap; }

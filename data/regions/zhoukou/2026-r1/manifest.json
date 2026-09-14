@@ -1,0 +1,21 @@
+{
+  "kind": "region-fee-config",
+  "id": "zhoukou",
+  "regionName": "周口(河南)",
+  "algorithm": "point-value",
+  "baseWeightsId": null,
+  "schemeVersion": "CHS-DRG",
+  "dataVersion": "2026-r1",
+  "dataLevel": "reference",
+  "demo": true,
+  "effectiveFrom": "2026-01-01",
+  "effectiveUntil": null,
+  "schemaVersion": 2,
+  "weightsRows": 825,
+  "weightsPublished": 815,
+  "files": {
+    "weights.csv": "04b8bccdc1637dc888a075f80684366f2369e3304a11ed39cac5d11d74739bb5",
+    "parameters.json": "723a681f4534b5648c2a554ff829afdc23dfeacd94446c3c1a21da11826256bf"
+  },
+  "notes": "【dataLevel=reference】周口无公开权重表,本包权重非周口公布值(825 行,815 published,11 组无权重为 unpublished),仅可用于估算参考,不可作为地方结算依据;取得周口本地公布数据后生成 official 包替换。cityAvgCost=5270.76 元/RW(基准费率表),pointScale=100(费率÷点值≈99.81),点值 居民52.8094/职工53.8381 → 控费系数 1.002/1.021。上游 avg_cost 列未搬运(留空):病组次均按 rw×cityAvgCost 推导,与周口口径一致;旧包来自历史项目的 drg-attributes.csv(1.1 口径,与 3.0 码交集仅 380)不沿用。倍率策略采用缺省。 生成时间 2026-09-05。"
+}

@@ -1,0 +1,415 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="CHS-DRG 3.0 病案首页 DRG 分组工作台:单病例分组、批量分组、数据一览">
+<meta name="robots" content="noindex">
+<title>DRG 分组工作台 · CHS-DRG 3.0</title>
+<script>
+/* 主题预置:手动选择优先(localStorage drg-theme),否则跟随系统色彩方案;样式表加载前执行避免闪色 */
+(function () {
+  var t = null;
+  try { t = localStorage.getItem('drg-theme'); } catch (e) { /* 隐私模式等场景静默 */ }
+  if (t !== 'dark' && t !== 'light') {
+    t = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  document.documentElement.dataset.theme = t;
+})();
+/* 编码版本预置:与主题同理,样式表加载前定好,避免顶栏开关先高亮国临版再跳到医保版。
+   未知值一律回退国临版 —— 它也是服务端默认(与旧版「转换医保版编码=勾选」等价)。 */
+(function () {
+  var v = null;
+  try { v = localStorage.getItem('drg.code.version'); } catch (e) { /* 同上 */ }
+  document.documentElement.dataset.codever = (v === 'yibao' || v === 'guolin') ? v : 'guolin';
+})();
+</script>
+<link rel="stylesheet" href="fonts/ibm-plex-mono/ibm-plex-mono.css">
+<link rel="stylesheet" href="fonts/noto-sans-sc/noto-sans-sc.css">
+<link rel="stylesheet" href="style.css">
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+</head>
+<body>
+
+<!-- 跳过导航:键盘用户可直达结果区,不必逐个 Tab 走过顶部导航与整个录入表单 -->
+<a class="skip-link" href="#resultPane">跳到结果</a>
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="brand">
+      <span class="brand-mark"><span class="bm-core">DRG</span><span class="bm-x">X</span></span>
+      <h1 class="brand-title">分组工作台</h1>
+      <span class="pack-chip" id="packChip" hidden></span>
+      <span class="foot-note" title="分组规则源自国家医保局公开发布的 CHS-DRG 3.0 分组方案 · 数据包加载中…">依据国家医保局 CHS-DRG 3.0 分组方案</span>
+    </div>
+    <div class="topbar-right">
+      <!-- 编码版本:全局输入口径(单病例/批量/HIS 三条录入通道共用一个选择)。
+           首屏高亮由 <html data-codever> 决定(见头部预置脚本),避免"先闪国临版再跳医保版";
+           JS 接管后改用 .is-active,两条路径共用同一条 CSS 规则。 -->
+      <div class="codever-wrap">
+        <span class="cmd-label">编码</span>
+        <div class="cv-seg" id="codeVerSeg" role="radiogroup" aria-label="输入编码版本">
+          <button type="button" class="cv-item" data-ver="guolin" role="radio" aria-checked="true">国临版</button>
+          <button type="button" class="cv-item" data-ver="yibao" role="radio" aria-checked="false">医保版</button>
+        </div>
+      </div>
+      <label class="region-wrap" id="regionWrap" hidden title="费用数据所在区域（RW / 参考费用 / 支付标准）">
+        <span class="cmd-label">区域</span>
+        <select id="regionSel" class="region-sel" aria-label="费用区域"></select>
+      </label>
+      <nav class="tabs" role="tablist" aria-label="工作模式">
+        <button type="button" class="tab is-active" data-tab="single" role="tab" aria-selected="true" aria-controls="view-single">单病例</button>
+        <button type="button" class="tab" data-tab="batch" role="tab" aria-selected="false" aria-controls="view-batch">批量分组</button>
+        <button type="button" class="tab" data-tab="data" role="tab" aria-selected="false" aria-controls="view-data">数据一览</button>
+      </nav>
+      <button type="button" class="theme-toggle" id="themeToggle" aria-label="切换深色主题" title="切换深色/浅色主题">
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+      </button>
+    </div>
+  </div>
+</header>
+
+<main class="page">
+
+  <!-- ==================== 单病例 ==================== -->
+  <section class="view is-active" id="view-single" role="tabpanel" aria-label="单病例">
+    <div class="split">
+
+      <form id="recordForm" class="col-form" autocomplete="off" novalidate>
+
+        <div class="form-panel">
+
+          <!-- 病案提取:并入单病例左侧输入区,作为主路径零录入入口(单病例功能),可折叠 -->
+          <details class="fp-sec fp-sec-first extract-sec fp-sec-fee" open>
+            <summary class="fp-title fp-title-summary">
+              <span class="fp-num">00</span> 病案提取
+              <!-- 姓名脱敏放在标题行右侧:它是全局设置(两个页签的 HIS 查询都生效),
+                   放这里展开/收起都在,不与「就诊号 + 提取」主操作抢位置 -->
+              <label class="trace-toggle mask-toggle"
+                     title="演示 / 截图用：不显示 HIS 返回的患者姓名。仅替换页面上的显示文本，接口响应里仍是真实姓名">
+                <input type="checkbox" id="maskNameChk"> 姓名脱敏
+              </label>
+            </summary>
+            <div class="extract-row">
+              <input id="hisIdInput" type="text" spellcheck="false" autocomplete="off"
+                     placeholder="就诊号 / 病案号，回车提取并分组">
+              <button type="button" class="btn btn-primary btn-sm" id="hisFetch">提取并分组</button>
+            </div>
+            <p class="form-error cmd-error" id="hisError" role="alert" hidden></p>
+          </details>
+
+          <!-- 提取病例摘要:HIS 提取后的身份信息置左,下方仍可修订编辑 -->
+          <section class="fp-sec picked-bar" id="pickedBar" hidden>
+            <h2 class="fp-title">
+              <span class="picked-tag">提取</span> 病例信息
+              <span class="opt-tag">来自 HIS,可在下方修订后重新分组</span>
+            </h2>
+            <div class="picked-grid" id="pickedGrid"></div>
+          </section>
+
+          <section class="fp-sec">
+            <h2 class="fp-title">
+              <span class="fp-num">01</span> 患者信息
+            </h2>
+            <div class="field-row">
+              <div class="field">
+                <span class="f-label" id="genderLabel">性别 <span class="req">*</span></span>
+                <div class="seg" role="radiogroup" aria-labelledby="genderLabel">
+                  <button type="button" class="seg-item" data-gender="1" role="radio" aria-checked="false">男</button>
+                  <button type="button" class="seg-item" data-gender="2" role="radio" aria-checked="false">女</button>
+                </div>
+              </div>
+              <div class="field field-age">
+                <label class="f-label" for="ageInput">年龄(岁)</label>
+                <input id="ageInput" type="number" min="0" max="150" inputmode="numeric" placeholder="—">
+              </div>
+              <button type="button" class="link-btn" id="neoToggle" aria-expanded="false" aria-controls="neoFields">新生儿病案</button>
+            </div>
+            <div class="field-row neo" id="neoFields" hidden>
+              <div class="field field-grow">
+                <label class="f-label" for="ageDayInput">日龄(天)</label>
+                <input id="ageDayInput" type="number" min="0" inputmode="numeric" placeholder="出生后天数">
+              </div>
+              <div class="field field-grow">
+                <label class="f-label" for="weightInput">出生体重(克)</label>
+                <input id="weightInput" type="number" min="0" inputmode="numeric" placeholder="如 2500">
+              </div>
+              <p class="neo-hint cell-dim">新生儿年龄须填 <b>0</b> 而非留空：留空视为缺失，病例会流出新生儿组(MDCP)按成人规则分组。</p>
+            </div>
+          </section>
+
+          <section class="fp-sec">
+            <h2 class="fp-title">
+              <span class="fp-num">02</span> 诊断与手术操作
+              <button type="button" class="link-btn" id="exampleBtn"
+                title="填入典型测试病例并立即分组,覆盖直赋/分档/歧义等场景">示例病例</button>
+              <button type="button" class="link-btn whatif-toggle" id="whatIfToggle" disabled
+                title="逐个把其他诊断/手术提为主项,对比分组后果">换主诊/手术模拟</button>
+            </h2>
+            <div class="field">
+              <span class="f-label">主要诊断 <span class="req">*</span></span>
+              <div class="chipbox" id="mainDxBox"></div>
+            </div>
+            <div class="field">
+              <span class="f-label">其他诊断</span>
+              <div class="chipbox" id="otherDxBox"></div>
+            </div>
+            <div class="field">
+              <span class="f-label">主要手术操作</span>
+              <div class="chipbox" id="mainProcBox"></div>
+            </div>
+            <div class="field">
+              <span class="f-label">其他手术操作</span>
+              <div class="chipbox" id="otherProcBox"></div>
+            </div>
+          </section>
+
+          <details class="fp-sec fp-sec-fee" id="feeSec" hidden>
+            <summary class="fp-title fp-title-summary">
+              <span class="fp-num">03</span> 费用测算
+              <!-- 折叠态下这句是唯一的"这里能得到什么"。原文案「系数/点值自动计算,无需录入」说的是
+                   "不用填什么",结果面板的参数行里本来就会列出系数/总点数/点值 —— 等于把重复信息放在
+                   门口、把价值信息藏在里面。改成点明三框里哪一项是选填、填了换来什么。 -->
+              <span class="opt-tag">实际费用选填 · 填了可算倍率区间与费用位置</span>
+            </summary>
+            <div class="fee-fields">
+              <!-- 三个选择性输入同排一行,各自只需容纳 2~4 字选项与金额:
+                   旧布局里「医院等级/医保类型」各 flex:1 撑到半列(217px)、实际费用独占整行(448px),
+                   数字与选项浮在大框里,白白吃掉左侧纵向空间。 -->
+              <div class="field-row">
+                <div class="field fee-level-field" id="feeLevelField">
+                  <label class="f-label" for="feeLevelSel">医院等级</label>
+                  <select id="feeLevelSel"></select>
+                </div>
+                <div class="field fee-type-field">
+                  <label class="f-label" for="feeTypeSel">医保类型</label>
+                  <select id="feeTypeSel"></select>
+                </div>
+                <div class="field fee-amount-field">
+                  <label class="f-label" for="feeAmountInput">实际费用(元)
+                    <span class="opt-tag" title="选填;填写后自动测算倍率区间与费用位置">选填</span>
+                  </label>
+                  <input id="feeAmountInput" type="number" min="0" step="0.01" inputmode="decimal" placeholder="如 18500.50">
+                </div>
+              </div>
+            </div>
+          </details>
+
+          <div class="fp-actions">
+            <button type="submit" id="submitBtn" class="btn btn-primary btn-lg">分组</button>
+            <button type="button" class="btn btn-ghost" id="resetBtn">清空</button>
+            <!-- 「转换医保版编码」勾选框已移除:它把"输入是哪一版"和"要不要转换"挤在一个布尔里,
+                 两版同码不同义时无法表达。顶栏「编码 国临版/医保版」是同一个开关的唯一入口。 -->
+            <span class="action-spacer"></span>
+          </div>
+
+        </div>
+
+        <p class="form-error" id="formError" role="alert" hidden></p>
+      </form>
+
+      <!-- 换主诊/手术模拟:原生 dialog(自带焦点陷阱/Esc/遮罩),内容在打开时按最新表单重建。
+           双保险:aria-label 是关闭态的静态兜底,aria-labelledby 在打开时指向动态标题(#whatIfDlgTitle),
+           一旦动态标题不可解析,无障碍名自动回退到 aria-label,不会退化成无名"对话框"。 -->
+      <dialog id="whatIfDlg" class="whatif-dlg" aria-label="换主诊/主手术模拟" aria-labelledby="whatIfDlgTitle"></dialog>
+      <!-- 示例病例:同款原生 dialog,打开时重建病例清单,点选即填入表单并分组 -->
+      <dialog id="exampleDlg" class="whatif-dlg" aria-label="示例病例" aria-labelledby="exampleDlgTitle"></dialog>
+
+      <div class="col-result" id="resultPane" aria-live="polite">
+        <div class="placeholder">
+          <div class="placeholder-mark">DRGX</div>
+          <p>在左侧输入就诊号自动提取病案，或录入后点击「分组」</p>
+          <p class="placeholder-sub">结果将显示 DRG 组、权重、支付标准与判定依据</p>
+          <div class="placeholder-actions">
+            <button type="button" class="btn btn-ghost btn-sm" id="placeholderExample">看一个示例病例</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ==================== 批量分组 ==================== -->
+  <section class="view" id="view-batch" hidden role="tabpanel" aria-label="批量分组">
+    <div class="stack">
+
+      <section class="card">
+        <div class="seg-tabs" id="batchSrcSeg" role="tablist" aria-label="批量来源">
+          <button type="button" class="seg-tab is-active" id="bsrcTab-his" data-src="his" role="tab" aria-selected="true" aria-controls="bsrc-his">HIS 按日期</button>
+          <button type="button" class="seg-tab" id="bsrcTab-file" data-src="file" role="tab" aria-selected="false" aria-controls="bsrc-file">上传文件</button>
+        </div>
+
+        <div class="bsrc" id="bsrc-his" role="tabpanel" aria-labelledby="bsrcTab-his">
+          <div class="format-help">
+            <p>直接从 HIS 按出院日期区间提取病案并逐条分组,单条失败只记该行,不影响整单。</p>
+          </div>
+          <div class="field-row">
+            <div class="field">
+              <label class="f-label" for="hisBatchFrom">出院日期(起)</label>
+              <input id="hisBatchFrom" type="date">
+            </div>
+            <div class="field">
+              <label class="f-label" for="hisBatchTo">出院日期(止)</label>
+              <input id="hisBatchTo" type="date">
+            </div>
+            <div class="field">
+              <label class="f-label" for="hisBatchLimit">条数上限</label>
+              <!-- max / value 同样由 /api/info 注入(BatchLimits.MaxHisIds / DefaultHisIds)，
+                   与后端夹取用同一个数；这里写死就会出现"界面说能填 1000、服务端只收 500" -->
+              <input id="hisBatchLimit" type="number" min="1" inputmode="numeric">
+            </div>
+            <div class="field field-grow">
+              <span class="f-label">操作</span>
+              <button type="button" class="btn btn-primary his-batch-btn" id="hisBatchRun">提取并分组</button>
+            </div>
+          </div>
+          <label class="trace-toggle mask-toggle"
+                 title="演示 / 截图用：不显示 HIS 返回的患者姓名。与单病例页的开关是同一个设置">
+            <input type="checkbox" id="maskNameChkBatch"> 姓名脱敏
+          </label>
+          <p class="form-error" id="hisBatchError" role="alert" hidden></p>
+        </div>
+
+        <div class="bsrc" id="bsrc-file" role="tabpanel" aria-labelledby="bsrcTab-file" hidden>
+          <div class="format-help">
+            <p>直接上传医院系统导出的 HQMS 病案首页 CSV 或 XLSX（取首个工作表），系统按 HQMS 规范字段自动映射并分组；也可先下载模板对照表头。</p>
+            <!-- ⚠ 这两个 <b> 里**不许写数字**：上限只在服务端 BatchLimits 定义一处，
+                 由 /api/info 下发、batch.js#setBatchLimits 回填(含服务端预检用的是同一个数)。
+                 这里曾手抄着「64MB / 200,000 行」,而服务端是 128MB / 100,000 行 ——
+                 页面在 /api/info 返回前会先闪一个错的数字,且每次调上限都得记得改两处。 -->
+            <p class="cell-dim">上限：单文件 <b id="batchFileLimit">—</b>MB、数据 <b id="batchRowLimit">—</b> 行（不含表头）；超限会被拒绝并在此面板给出实际体积，请拆分后分批上传。</p>
+          </div>
+          <div class="actions">
+            <input type="file" id="batchFile" accept=".csv,.txt,.xlsx" />
+            <button type="button" class="btn btn-primary" id="batchCsvUpload">上传并分组</button>
+            <a class="link-btn" id="batchTplHqms" href="javascript:void(0)">下载HQMS模板</a>
+          </div>
+          <!-- 上传失败的出口就在本面板:错误必须写进 #batchFileError,
+               写进其他面板隐藏的错误位等于用户看不到任何反馈(实测:413 时页面毫无提示) -->
+          <p class="form-error" id="batchFileError" role="alert" hidden></p>
+          <!-- 进度:上传阶段按字节,服务端分组阶段按已处理行数(两阶段的百分比各自独立,
+               不混成一个"假装连续"的总进度 —— 因为两段耗时占比事先并不知道) -->
+          <div class="batch-progress" id="batchProgress" hidden>
+            <div class="bp-track"><i class="bp-fill" id="batchProgressBar"></i></div>
+            <span class="bp-text cell-dim" id="batchProgressText" role="status" aria-live="polite"></span>
+          </div>
+          <details class="col-help">
+            <summary>各格式取用的列</summary>
+            <div id="colHelp"></div>
+          </details>
+        </div>
+      </section>
+
+      <div id="batchOut" hidden>
+        <div class="batch-toolbar">
+          <div class="batch-summary" id="batchSummary"></div>
+          <button type="button" class="btn btn-ghost btn-sm" id="batchCsvTop">导出 CSV</button>
+          <label class="trace-toggle filter-toggle" id="batchFilterWrap" title="只显示解析失败 / 未入组 / 歧义的行">
+            <input type="checkbox" id="batchOnlyIssues"> 只看异常
+          </label>
+        </div>
+        <section class="card card-table">
+          <div class="table-wrap">
+            <table class="data-table" id="batchTable">
+              <thead>
+                <tr>
+                  <th class="col-line">行</th>
+                  <th class="col-recno">病案号</th>
+                  <th class="col-name">姓名</th>
+                  <th class="col-idno">证件号码</th>
+                  <th class="col-sex">性别</th>
+                  <th class="col-age">年龄</th>
+                  <th class="col-dx">主要诊断</th>
+                  <th class="col-dxs">其他诊断</th>
+                  <th class="col-proc">手术操作</th>
+                  <th class="col-status">结果</th>
+                  <th class="col-mdc">MDC</th>
+                  <th class="col-adrg">ADRG</th>
+                  <th class="col-drg">DRG</th>
+                  <th class="col-gname">DRG 名称</th>
+                  <th class="num col-rw">RW</th>
+                  <th class="num col-cost">参考费用</th>
+                  <th class="num col-factor">系数</th>
+                  <th class="num col-pv">点值</th>
+                  <th class="num col-tp">点数</th>
+                  <th class="num col-std">支付标准</th>
+                  <th class="num col-est">估算支付</th>
+                  <th class="col-rate">倍率</th>
+                  <th class="col-reason">说明</th>
+                  <th class="row-copy-cell" aria-hidden="true"></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <!-- 大结果集只回传/只渲染前 N 行明细(见 BatchLimits.MaxDetailRows):
+               截断必须显式告知,并把"完整结果怎么取"写清楚 —— 否则用户会以为表里就是全部。 -->
+          <p class="table-note" id="batchPreviewNote" hidden></p>
+        </section>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- ==================== 数据一览(官方配置表=官方工作簿,只读) ==================== -->
+  <section class="view" id="view-data" hidden role="tabpanel" aria-label="数据一览">
+    <div class="stack">
+
+      <div class="subtabs" id="dataSubtabs" role="tablist" aria-label="官方数据表"></div>
+
+      <section class="card card-table" id="dataTableCard" role="tabpanel" aria-label="官方数据表内容">
+        <div class="data-meta" id="dataMeta"></div>
+        <div class="drill-bar" id="dataDrillBar" hidden></div>
+        <div class="table-toolbar">
+          <input type="search" id="dataSearch" class="search-input" spellcheck="false"
+                 placeholder="在本表全部列中检索…" autocomplete="off">
+          <div class="toolbar-right">
+            <button type="button" class="btn btn-ghost btn-sm" id="dataTreeExpand" hidden>全部展开</button>
+            <label class="field-inline" id="dataPageSizeWrap">每页
+              <select id="dataPageSize" aria-label="每页条数">
+                <option value="50">50</option>
+                <option value="100">100</option>
+                <option value="200">200</option>
+              </select>条
+            </label>
+            <button type="button" class="btn btn-ghost btn-sm" id="dataExport">导出 CSV</button>
+          </div>
+        </div>
+        <div class="table-wrap" id="dataTablePane">
+          <table class="data-table">
+            <thead><tr id="dataHead"></tr></thead>
+            <tbody id="dataBody"></tbody>
+          </table>
+        </div>
+        <!-- 层级树(分组主干 MDC → ADRG → DRG / 编码集合 类型 → 集合):左目录树 + 右详情双栏。
+             左侧只放层级骨架(缩进表达层级,编码 + 名称),点行选中;
+             右侧展示选中节点的内容:主干树是层级徽标、编码名称、完整入组条件、下级清单,
+             集合树是集合号、类型与成员清单(按需分页)。容器的 aria-label 由 JS 按当前树改写。 -->
+        <div class="tree-split" id="dataTreePane" hidden>
+          <div class="tree-side" role="tree" aria-label="分组主干目录">
+            <div id="dataTreeList"></div>
+          </div>
+          <div class="tree-detail" id="dataTreeDetail"></div>
+        </div>
+        <div class="pager" id="dataPager">
+          <span class="pager-info" id="dataPage"></span>
+          <div class="pager-actions">
+            <button type="button" class="btn btn-ghost" id="dataPrev">上一页</button>
+            <button type="button" class="btn btn-ghost" id="dataNext">下一页</button>
+            <label class="field-inline pager-jump-label">
+              跳至<input type="number" id="dataJump" class="pager-jump" min="1" aria-label="跳至页">页
+            </label>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </section>
+
+</main>
+
+<noscript><p style="padding:16px;color:#c5221f">本页面需要启用 JavaScript。</p></noscript>
+<script type="module" src="js/main.js"></script>
+</body>
+</html>

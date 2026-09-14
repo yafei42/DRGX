@@ -1,0 +1,9 @@
+{
+  "cityAvgCost": 5270.76,
+  "pointScale": 100,
+  "pointValues": {
+    "居民": 52.8094,
+    "职工": 53.8381
+  },
+  "defaultFactor": 1
+}
