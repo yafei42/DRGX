@@ -52,8 +52,8 @@ public static class OfficialPackReader
         // 唯一真源，故不再调用 LoadCore，消除"改了 rules 却不生效"的双真源陷阱与对旧 JSON 布局的硬依赖。
         // 机器人辅助手术触发码同属官方来源：官方 OP_ARB 集合（T005 五码 17.4100~17.4500），
         // 因此包根不再分发 robot-procedures.csv。
-        if (!codeSets.TryGetValue("OP_ARB", out var opArb) || opArb.Count == 0)
-            throw new PackException("官方工作簿「集合」表: 缺少 OP_ARB 集合（机器人辅助手术触发码表）");
+        if (!codeSets.TryGetValue(SplitTraits.RobotSetRef, out var opArb) || opArb.Count == 0)
+            throw new PackException($"官方工作簿「集合」表: 缺少 {SplitTraits.RobotSetRef} 集合（机器人辅助手术触发码表）");
         var side = PackReader.LoadSideTables(
             packDirectory, opArb.ToFrozenSet(StringComparer.OrdinalIgnoreCase));
 
@@ -173,11 +173,9 @@ public static class OfficialPackReader
         var qyRules = PackReader.ReadQyRules(
             book.Table(OfficialWorkbook.AdrgTable), validProcedures, mdcChain.Select(m => m.Code).ToList());
 
-        var emitted = mdcChain.SelectMany(m => m.Adrgs).SelectMany(a => a.Splits).Select(t => t.Code).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        // QY 组由白名单动态产出（{MDC}QY），不作为普通落位出现，不计入不可达
-        var unreachable = groups.Keys
-            .Where(code => !emitted.Contains(code) && !code.EndsWith("QY", StringComparison.Ordinal))
-            .ToList();
+        var emitted = PackCoverage.Emitted(mdcChain, qyRules.Keys);
+        // QY 组由白名单动态产出（{MDC}QY），已算进 emitted，不再单独按后缀过滤
+        var unreachable = PackCoverage.Unreachable(groups.Keys, emitted);
 
         return new DataPack
         {
@@ -196,8 +194,8 @@ public static class OfficialPackReader
             NonPrincipalDiagnoses = side.NonPrincipalDiagnoses,
             // 官方 3.0 的 DRG 分档规则（如 EB10 = {ZYSS,QTSS} in OP_ARB）直接用机器人 5 码（OP_ARB）
             // 判定，因此官方模式下不得把机器人码当"非分组操作"剔除——blocked.csv 的机器人条目是
-            // 旧包脚注18 直赋机制的手工残留。17.4901（康复机器人）不在 OP_ARB，保留剔除。
-            NonGroupingProcedures = side.NonGroupingProcedures.Except(side.RobotProcedures, StringComparer.Ordinal).ToFrozenSet(StringComparer.OrdinalIgnoreCase),
+            // 旧包脚注18 直赋机制的手工残留。判据与"为什么不能按 17.4 前缀切"见 PackCoverage.NonGroupingOf。
+            NonGroupingProcedures = PackCoverage.NonGroupingOf(side.NonGroupingProcedures, side.RobotProcedures),
             Cc = cc.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase),
             Mcc = mcc.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase),
             Exclusions = exclusions.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase),
@@ -209,6 +207,7 @@ public static class OfficialPackReader
             PrimaryGroups = side.PrimaryGroups,
             Groups = groups.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase),
             MdcChain = mdcChain,
+            EmittedCodes = emitted,
             UnreachableGroups = unreachable,
         };
     }

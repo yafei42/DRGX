@@ -122,14 +122,20 @@ export function timelineModel(status, o, trace, names) {
   // drgOrigin = rules 内 split.origin(合并症等级/年龄属性/特殊入组条件三列综合),「条件内容」首选
   const drgOrigin = o.drgOrigin || null;
   // drgDirect = 直赋档说明(高危妊娠直赋/机器人直赋):落位由特殊身份条件决定,与合并症分档无关,
-  // 段标题优先于 MCC/CC 计数推断(直赋档 0 MCC/0 CC 时按计数会误标"不伴并发症")。
+  // 段标题优先于分档(直赋档 0 MCC/0 CC 时按计数会误标"不伴并发症")。
   // 高危妊娠由后端按主诊断命中 811 清单判定,有 MCC 也照样下发——MCC 只是同一 DRG 的另一条落位路径。
   const drgDirect = o.drgDirect || null;
+  // tierText = 后端按**命中的那条 split 条件**给的分档(伴严重并发症/伴并发症/不伴并发症)。
+  // 不再按 MCC/CC 计数推断:计数只反映病例事实,不反映规则选中了哪一档 ——
+  // 病例有 MCC 而落位到"伴并发症"档时,按计数会读成"伴严重并发症"。
+  // 旧响应没有该字段时才回退计数(前后端同包分发,这一分支只为兼容单独替换 wwwroot 的情形)。
+  const tierText = o.tierText
+    || (mccCount > 0 ? '伴严重并发症' : ccCount > 0 ? '伴并发症' : '不伴并发症');
   const drgPairs = pairsOf(hits.filter(isSubgroupTrace));
   const drgStep = {
     key: 'drg', tag: 'DRG', code: o.code || '—',
     label: status === 'Success'
-      ? `细分组落位(${drgDirect || (mccCount > 0 ? '伴严重并发症' : ccCount > 0 ? '伴并发症' : '不伴并发症')})`
+      ? `细分组落位(${drgDirect || tierText})`
       : status === 'Ambiguous' ? '歧义病案 · 需人工复核' : '未能入组',
     tone: lastTone,
     evidence: drgPairs,

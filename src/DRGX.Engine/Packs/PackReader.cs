@@ -176,8 +176,10 @@ public static class PackReader
         var qyRules = ReadQyRules(null, validProcedures, manifest.MdcOrder);   // 基础 JSON 轨无官方工作簿 → 走历史降级分支
 
         // ---- 覆盖率(警告级) ----
-            var emitted = mdcChain.SelectMany(m => m.Adrgs).SelectMany(a => a.Splits).Select(t => t.Code).ToHashSet();
-        var unreachable = groupTable.Keys.Where(code => !emitted.Contains(code)).ToList();
+        // 可达码与"不可达"一律走 PackCoverage:两条装载轨必须同义,
+        // 且 QY 白名单动态产出的 {MDC}QY 要算进可达(见 PackCoverage 的说明)。
+        var emitted = PackCoverage.Emitted(mdcChain, qyRules.Keys);
+        var unreachable = PackCoverage.Unreachable(groupTable.Keys, emitted);
 
         return new DataPack
         {
@@ -200,6 +202,7 @@ public static class PackReader
             PrimaryGroups = side.PrimaryGroups,
             Groups = groupTable.ToFrozenDictionary(),
             MdcChain = mdcChain,
+            EmittedCodes = emitted,
             UnreachableGroups = unreachable,
         };
     }

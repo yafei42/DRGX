@@ -97,8 +97,10 @@ function renderPreviewNote(hit, shown, only) {
  *  两种模式的行数上限不同,因为诉求不同:
  *   - 正常模式:预览 detailRows 行(一行一份 DOM,不虚拟滚动)。
  *   - 只看异常:按 issueRows 全量渲染 —— 上传大文件要看的恰恰是"哪些没入组、为什么",
- *     把它截到预览那点行数等于把功能做废。服务端对问题行也按同一个数保留判定依据(trace),
- *     所以渲染出来的每一行都点得开(两个数都由 /api/info 下发,见 setBatchLimits)。
+ *     把它截到预览那点行数等于把功能做废。
+ *  两个数都只约束**浏览器建多少行 DOM**,与服务端回传无关:批量行已不携带判定明细
+ *  (服务端 TrimDetail 一律裁掉 trace / 编码映射 / 排除表命中),逐行展开也已移除 ——
+ *  要逐条分析请走「导出 CSV」。(两个数都由 /api/info 下发,见 setBatchLimits。)
  *
  *  行数 ≤ 一片时同步插完(调用方随后即可读到 DOM),超过一片分帧插入,每片让出主线程。 */
 export function renderBatchRows() {
@@ -299,8 +301,8 @@ let uploadLimit = { maxUploadMb: 0 };
 let detailRows = 1000;   // 与 BatchLimits.MaxDetailRows 同值;真实值由 /api/info 下发
 
 /** 「只看异常」模式的渲染上限:同样由 /api/info 注入(对应 BatchLimits.MaxIssueRows)。
-    它比 detailRows 大一个数量级 —— 异常行是用户真正要处理的东西,不按预览口径截断;
-    服务端也按这个数给问题行保留 trace,所以渲染出来的每一行都点得开。 */
+    与 detailRows 同值 —— 正常行与异常行看到的上限一致,用户不必记两套规则。
+    它只约束浏览器建多少行 DOM,与服务端回传无关(见 renderBatchRows 的说明)。 */
 let issueRows = 1000;    // 与 BatchLimits.MaxIssueRows 同值;真实值由 /api/info 下发
 
 /** HIS 按日期提取的条数上限 / 默认值(对应 BatchLimits.MaxHisIds / DefaultHisIds)。

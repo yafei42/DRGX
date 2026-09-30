@@ -285,9 +285,10 @@ public static class BatchParsing
     };
 
     /// <summary>批量结果行(分组成功/失败路径共用)。Weight/Cost 为支付参数,由 Web 宿主从
-    /// 独立费用模块按 DRG 码 join 回填(分组器不承载权重)。</summary>
-    public static BatchRow OutcomeRow(int line, string summary, GroupOutcome o, string? patientId = null,
-        string? drgDirect = null) => new(
+    /// 独立费用模块按 DRG 码 join 回填(分组器不承载权重)。
+    /// 直赋档说明直接取自 <see cref="GroupOutcome.DrgDirect"/> —— 判定由引擎在命中档位处完成,
+    /// 调用方不再需要传入(原先三条路径各自调 WebApp.ResolveDrgDirect 重判一次)。</summary>
+    public static BatchRow OutcomeRow(int line, string summary, GroupOutcome o, string? patientId = null) => new(
         line,
         summary,
         PatientId: patientId,
@@ -301,7 +302,7 @@ public static class BatchParsing
         Trace: o.Trace,
         Mappings: o.Mappings,
         ExcludedComplications: o.ExcludedComplications,
-        DrgDirect: drgDirect);
+        DrgDirect: o.DrgDirect);
 
     /// <summary>把病案的临床明细补进结果行(性别/年龄/主诊断/其他诊断/手术各自成列,供人工分析)。</summary>
     public static BatchRow WithCase(this BatchRow row, MedicalRecord rec) => row with

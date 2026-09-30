@@ -18,6 +18,9 @@ public sealed record GroupingOptions
 /// Trace 开启时输出判定轨迹(含排除明细);命中门控/落位附带条件级轨迹
 /// (原语表达式、结果、命中码/实际值),VerboseTrace 追加全部未命中明细。
 /// 线程安全:依赖的 <see cref="DataPack"/> 只读;实例创建后可跨线程并发分组。
+///
+/// <para>前四个阶段(病案 → <see cref="PreparedCase"/>)在 <see cref="CasePreparation"/> 里,
+/// 本类只负责 MDC 链首中与结果装配。分开的理由见 <see cref="PreparedCase"/> 的说明。</para>
 /// </summary>
 public sealed class GrouperEngine
 {
@@ -35,8 +38,9 @@ public sealed class GrouperEngine
     // ---------------- 内部 ----------------
 
     /// <summary>
-    /// 单病例分组流水线。按阶段拆分为私有方法,阶段顺序与轨迹文案与既有实现一致:
-    /// ① 输入校验 → ② 编码映射 → ③ 主诊断识别与无效码 → ④ 并发症计算 → ⑤ MDC 链首中。
+    /// 单病例分组流水线。阶段顺序与轨迹文案与既有实现一致:
+    /// ①~④ 输入校验/编码映射/主诊断识别/并发症计算 由 <see cref="CasePreparation.Prepare"/> 承担,
+    /// 本类只做 ⑤ MDC 链首中与结果装配。
     /// </summary>
     private sealed class Pipeline(DataPack pack, MedicalRecord record, GroupingOptions options)
     {
@@ -44,230 +48,38 @@ public sealed class GrouperEngine
         private readonly MedicalRecord _record = record;
         private readonly GroupingOptions _options = options;
         private readonly List<TraceStep>? _steps = options.Trace ? [] : null;
-        private readonly List<CodeMapping> _mappings = [];
-        /// <summary>目标口径(医保版)目录里查不到的输入码(去重,保持首次出现顺序)。仅用于轨迹提示。</summary>
-        private readonly List<string> _foreignCodes = [];
-        private readonly List<ExcludedComplication> _excludedComplications = [];
 
         public GroupOutcome Run()
         {
-            // ---- ① 输入校验(镜像规范 §6 契约) ----
-            var invalid = ValidateInput();
-            if (invalid is not null)
-                return Outcome(GroupStatus.CheckFailed, UngroupedReason.InputInvalid, invalid);
-
-            // ---- ② 编码映射(国临版→医保版标准化,可选) ----
-            var (diagnoses, procedures) = NormalizeCodes();
-
-            var mainDiagnosis = diagnoses[0];
-            var otherDiagnoses = diagnoses.Skip(1).ToList();
-            var mainProcedure = procedures.Count > 0 ? procedures[0] : null;
-            var otherProcedures = procedures.Skip(1).ToList();
-
-            // 机器人辅助手术标志:17.4x 机器人码既是"非分组操作"(从常规匹配/计数剔除),
-            // 又是"机器人辅助组"的触发信号。在剔除前整体识别,供 robotAssist 条件路由。
-            // 触发码表来自官方 OP_ARB 集合(T005 精确 5 码,脚注18)——不可用 "17.4" 前缀
-            // 匹配:17.4900/17.4900x001/17.4901 同属 17.4 家族但官方无直赋资格(误伤会错直赋 0 档)。
-            var robotAssist = procedures.Any(p => _pack.RobotProcedures.Contains(p));
-
-            // ---- ③ 主诊断识别与无效码 ----
-            var blocked = RejectMainDiagnosis(mainDiagnosis);
-            if (blocked is not null) return blocked;
-
-            // 主操作不参与分组 → 视为"无主操作";其他操作中的不参与分组项直接剔除。诊断路径继续。
-            (mainProcedure, otherProcedures) = ApplyProcedureBlocklist(mainProcedure, otherProcedures);
-
-            // ---- ④ 并发症计算(排除表机制;MCC 与 CC 独立归类) ----
-            var (mccList, ccList) = ComputeComplications(otherDiagnoses, mainDiagnosis, out var exclusionGroup);
-            var validProcedures = procedures.Where(p => _pack.ValidProcedures.Contains(p)).ToList();
-            Step("并发症", $"MCC {mccList.Count} 项 / CC {ccList.Count} 项 / 有效操作 {validProcedures.Count} 项");
+            // ---- ①~④ 病案 → 待判定病案(校验/映射/主诊断/并发症) ----
+            var prep = CasePreparation.Prepare(_record, _pack, _options.CodeSystem, _steps);
+            if (prep.Case is null)
+                return Outcome(prep.Status, prep.Reason, prep.Error, mappings: prep.Mappings);
 
             // ---- ⑤ MDC 链首中 ----
-            return MatchMdcChain(mainDiagnosis, otherDiagnoses, mainProcedure, otherProcedures,
-                robotAssist, mccList, ccList, validProcedures, exclusionGroup);
-        }
-
-        // ---------------- ① 校验 ----------------
-
-        /// <summary>返回不通过原因文案;null 表示通过。</summary>
-        private string? ValidateInput()
-        {
-            if (string.IsNullOrWhiteSpace(_record.Gender))
-            {
-                Step("校验", "患者性别为空");
-                return "患者性别为空";
-            }
-            if (_record.Gender is not ("1" or "2"))
-            {
-                Step("校验", "性别只能填 1（男）或 2（女）");
-                return "性别只能填 1（男）或 2（女）";
-            }
-            if (_record.Diagnoses.Count == 0)
-            {
-                Step("校验", "诊断信息为空");
-                return "诊断信息为空";
-            }
-            return null;
-        }
-
-        // ---------------- ② 映射 ----------------
-
-        private (List<string> Diagnoses, List<string> Procedures) NormalizeCodes()
-        {
-            var yibao = _options.CodeSystem == CodeSystem.Yibao;
-            // 输入侧字典按所选版本选取:检索/校验用哪一版的目录,就按哪一版受理输入
-            var diagDict = yibao ? _pack.Yibao.Diagnoses : _pack.Guolin.Diagnoses;
-            var procDict = yibao ? _pack.Yibao.Procedures : _pack.Guolin.Procedures;
-            var diagnoses = Normalize(_record.Diagnoses, _pack.DiagnosisMap, diagDict, "诊断", _mappings, !yibao);
-            var procedures = Normalize(_record.Procedures, _pack.ProcedureMap, procDict, "操作", _mappings, !yibao);
-            Step("映射", yibao
-                ? $"医保版输入，未做编码转换:诊断 {_record.Diagnoses.Count} 项 / 操作 {procedures.Count} 项"
-                : $"编码规范化完成(国临版→医保版):诊断 {_record.Diagnoses.Count} 项 / 操作 {procedures.Count} 项");
-            // 目标口径(医保版)目录里查不到的码:分组仍会按原码判定，但结果基本只会是「未入组」。
-            // 单独说一句，免得把「版本选错」误读成「这例真的分不了组」。
-            if (_foreignCodes.Count > 0)
-            {
-                var shown = string.Join("、", _foreignCodes.Take(6));
-                var more = _foreignCodes.Count > 6 ? $" 等 {_foreignCodes.Count} 条" : "";
-                Step("映射", yibao
-                    ? $"医保版目录无此编码:{shown}{more}（请确认输入是否为医保版编码）"
-                    : $"国临版目录无医保版对应，按原码直判:{shown}{more}");
-            }
-            return (diagnoses, procedures);
-        }
-
-        private List<string> Normalize(
-            IReadOnlyList<string> codes, IReadOnlyDictionary<string, string> map, CodeDictionary dict,
-            string what, List<CodeMapping> mappings, bool applyMap)
-        {
-            var result = new List<string>(codes.Count);
-            foreach (var raw in codes)
-            {
-                var code = raw.Trim();
-                if (applyMap && map.TryGetValue(code, out var target))
-                {
-                    mappings.Add(new CodeMapping(Orig: code, Mapped: target, Type: what));
-                    result.Add(target);
-                    if (!InTargetDictionary(target)) _foreignCodes.Add(code);
-                    continue;
-                }
-                result.Add(code);
-                if (!dict.Contains(code) && !InTargetDictionary(code)) _foreignCodes.Add(code);
-            }
-            return result;
-
-            // 目标口径 = 医保版。刻意只查医保版目录:国临码转成医保码后若医保目录也没有，
-            // 说明该码只是"两版都写过、分组方案没收录"，同样值得点出来。
-            bool InTargetDictionary(string c) =>
-                _pack.Yibao.Diagnoses.Contains(c) || _pack.Yibao.Procedures.Contains(c);
-        }
-
-        // ---------------- ③ 主诊断与操作 ----------------
-
-        /// <summary>主诊断不可识别/不参与分组时返回终止结果,否则 null。</summary>
-        private GroupOutcome? RejectMainDiagnosis(string mainDiagnosis)
-        {
-            if (!_pack.DiagnosisNames.ContainsKey(mainDiagnosis))
-            {
-                Step("结果", $"主诊断 {mainDiagnosis} 不在诊断字典中");
-                return Outcome(GroupStatus.Ungroupable, UngroupedReason.MainDiagnosisUnrecognized,
-                    $"主诊断 {mainDiagnosis} 不在诊断字典中", mcc: [], cc: [], valid: []);
-            }
-            if (_pack.NonPrincipalDiagnoses.Contains(mainDiagnosis))
-            {
-                Step("结果", $"主诊断 {mainDiagnosis} 不参与分组");
-                return Outcome(GroupStatus.Ungroupable, UngroupedReason.MainDiagnosisNotGroupable,
-                    $"主诊断 {mainDiagnosis} 不参与分组", mcc: [], cc: [], valid: []);
-            }
-            return null;
-        }
-
-        private (string? MainProcedure, List<string> OtherProcedures) ApplyProcedureBlocklist(
-            string? mainProcedure, List<string> otherProcedures)
-        {
-            if (mainProcedure is not null && _pack.NonGroupingProcedures.Contains(mainProcedure))
-            {
-                Step("校验", $"主操作 {mainProcedure} 不参与分组,按无主操作处理");
-                mainProcedure = null;
-            }
-            if (otherProcedures.Count > 0)
-            {
-                var blockedOthers = otherProcedures.Where(_pack.NonGroupingProcedures.Contains).ToList();
-                if (blockedOthers.Count > 0)
-                {
-                    Step("校验", $"其他操作不参与分组,已剔除 {blockedOthers.Count} 项: {string.Join(", ", blockedOthers)}");
-                    otherProcedures = otherProcedures.Except(blockedOthers, StringComparer.Ordinal).ToList();
-                }
-            }
-            return (mainProcedure, otherProcedures);
-        }
-
-        // ---------------- ④ 并发症 ----------------
-
-        private (List<string> Mcc, List<string> Cc) ComputeComplications(
-            IReadOnlyList<string> otherDiagnoses, string mainDiagnosis, out string? exclusionGroup)
-        {
-            exclusionGroup = _pack.Exclusions.GetValueOrDefault(mainDiagnosis);
-            if (exclusionGroup is not null)
-                Step("并发症", $"主诊断 {mainDiagnosis} 已按排除表排除并发症组 {exclusionGroup}");
-
-            var mccList = new List<string>();
-            var ccList = new List<string>();
-            var excludedByMain = new List<ExcludedComplication>();
-            foreach (var d in otherDiagnoses)
-            {
-                if (_pack.Mcc.TryGetValue(d, out var g))
-                {
-                    if (g != exclusionGroup) mccList.Add(d);
-                    else excludedByMain.Add(new ExcludedComplication(d, "MCC", g));
-                }
-                if (_pack.Cc.TryGetValue(d, out var g2))
-                {
-                    if (g2 != exclusionGroup) ccList.Add(d);
-                    else excludedByMain.Add(new ExcludedComplication(d, "CC", g2));
-                }
-            }
-            if (excludedByMain.Count > 0)
-            {
-                Step("并发症", $"主诊断排除表生效,不计并发症: {string.Join(", ", excludedByMain.Select(e => $"{e.Code}({e.Kind},组{e.Group})"))}");
-                _excludedComplications.AddRange(excludedByMain);
-            }
-            return (mccList, ccList);
+            return MatchMdcChain(prep.Case);
         }
 
         // ---------------- ⑤ MDC 链 ----------------
 
-        private GroupOutcome MatchMdcChain(
-            string mainDiagnosis, List<string> otherDiagnoses, string? mainProcedure, List<string> otherProcedures,
-            bool robotAssist, List<string> mccList, List<string> ccList, List<string> validProcedures,
-            string? exclusionGroup)
+        private GroupOutcome MatchMdcChain(PreparedCase prepared)
         {
-            var ctx = new EvaluationContext
-            {
-                Record = _record,
-                MainDiagnosis = mainDiagnosis,
-                OtherDiagnoses = otherDiagnoses,
-                MainProcedure = mainProcedure,
-                OtherProcedures = otherProcedures,
-                RobotAssist = robotAssist,
-                MajorComplications = mccList,
-                MinorComplications = ccList,
-                ValidProcedureSet = _pack.ValidProcedures,
-            };
+            var failures = new List<MdcFailure>();
 
             // 歧义病案(QY)判定依据(官方 3.0 脚注17 + 2.0 术语定义):
             // 主手术 ∈「所有手术或操作(分组内涵)」(9,514 码,即 ValidProcedures)的病例为手术病例,
             // 只走手术驱动落位(外科组/操作组);MDC 门控通过但未命中 → 歧义组 {MDC}QY,
             // 不被内科组兜底吸收、不穿透到后续 MDC。清单外的 66 类操作(康复/通气/血浆置换等)
             // 不构成手术病例,永不判 QY。
-            var isSurgeryCase = mainProcedure is not null && _pack.ValidProcedures.Contains(mainProcedure);
+            var isSurgeryCase = prepared.MainProcedure is not null
+                && _pack.ValidProcedures.Contains(prepared.MainProcedure);
             var anyGatePassed = false;
 
             for (int mi = 0; mi < _pack.MdcChain.Count; mi++)
             {
                 var mdc = _pack.MdcChain[mi];
                 // 换 MDC 只换部位映射视图:上下文本身不可变
-                var mdcCtx = ctx with { Sites = mdc.Sites };
+                var mdcCtx = prepared.ContextFor(mdc.Sites);
 
                 // 门控节点少(1~3个),Trace 开启时随判定直接收集
                 List<ConditionTrace>? gateTrace = _options.Trace ? [] : null;
@@ -316,7 +128,6 @@ public sealed class GrouperEngine
 
                     // v3: entry 任一命中即入组；入组后按 splits 首中落位。
                     CompiledEntry? hitEntry = null;
-                    CompiledSplit? hitSplit = null;
                     var hitTrace = new List<ConditionTrace>();
                     for (int i = 0; i < adrg.Entries.Count; i++)
                     {
@@ -335,17 +146,17 @@ public sealed class GrouperEngine
 
                     if (hitEntry is not null)
                     {
+                        var adrgReason = hitEntry.Label.Length > 0
+                            ? hitEntry.Label
+                            : ConditionEvaluator.DescribeTree(hitEntry.When);
                         for (int j = 0; j < adrg.Splits.Count; j++)
                         {
                             var split = adrg.Splits[j];
                             if (split.When is null)
                             {
-                                hitSplit = split;
                                 Step("入组", $"MDC{mdc.Code} 匹配到 {split.Code}", "drgMatched", split.Code);
                                 EmitConditionTraces($"MDC{mdc.Code}", hitTrace);
-                                return Outcome(GroupStatus.Success, UngroupedReason.None, null,
-                                    mdc: $"MDC{mdc.Code}", code: split.Code, mccList, ccList, validProcedures,
-                                    adrgReason: hitEntry.Label.Length > 0 ? hitEntry.Label : ConditionEvaluator.DescribeTree(hitEntry.When));
+                                return Success(prepared, mdc, mdcCtx, adrg, split, adrgReason, failures);
                             }
                             var splitTrace = new List<ConditionTrace>();
                             var splitWhenPath = $"adrgs[{adrg.Code}].splits[{split.Code}].when";
@@ -354,12 +165,9 @@ public sealed class GrouperEngine
                             hitTrace.AddRange(splitTrace);
                             if (splitHit)
                             {
-                                hitSplit = split;
                                 Step("入组", $"MDC{mdc.Code} 匹配到 {split.Code}", "drgMatched", split.Code);
                                 EmitConditionTraces($"MDC{mdc.Code}", hitTrace);
-                                return Outcome(GroupStatus.Success, UngroupedReason.None, null,
-                                    mdc: $"MDC{mdc.Code}", code: split.Code, mccList, ccList, validProcedures,
-                                    adrgReason: hitEntry.Label.Length > 0 ? hitEntry.Label : ConditionEvaluator.DescribeTree(hitEntry.When));
+                                return Success(prepared, mdc, mdcCtx, adrg, split, adrgReason, failures);
                             }
                         }
                     }
@@ -396,7 +204,8 @@ public sealed class GrouperEngine
                         EmitConditionTraces($"MDC{mdc.Code}.QY", qyTrace);
                         return Outcome(GroupStatus.Ambiguous, UngroupedReason.None,
                             "歧义病案：主手术与主要诊断无关（需人工复核）",
-                            mdc: $"MDC{mdc.Code}", code: qyCode, mccList, ccList, validProcedures);
+                            prepared: prepared, mdc: $"MDC{mdc.Code}", code: qyCode,
+                            mdcFailures: failures);
                     }
                     if (_options.VerboseTrace)
                     {
@@ -423,6 +232,8 @@ public sealed class GrouperEngine
                         ("skippedMedical", skippedMedical.ToString()));
                 }
                 else Step("MDC", $"MDC{mdc.Code} 未匹配到具体组", "mdcNoGroupMatched", mdc.Code);
+
+                failures.Add(new MdcFailure(mdc.Code, DominantReason(mdcFailures), candidates, skippedMedical));
             }
 
             var reason = anyGatePassed ? UngroupedReason.NoSubgroupMatched : UngroupedReason.NoMdcMatched;
@@ -431,7 +242,28 @@ public sealed class GrouperEngine
                 : "不符合任何 MDC 的入组条件，无法入组", "ungroupable");
             return Outcome(GroupStatus.Ungroupable, reason,
                 anyGatePassed ? "通过 MDC 入组条件但未匹配到具体组" : "主要诊断不符合任何 MDC 的入组条件",
-                mcc: mccList, cc: ccList, valid: validProcedures);
+                prepared: prepared, mdcFailures: failures);
+        }
+
+        /// <summary>命中落位:装配成功结果。分档与直赋档在这里定 —— 引擎手上有命中的那条 split,
+        /// 消费端不必再按 DRG 码回查规则或按 MCC/CC 计数推断。</summary>
+        private GroupOutcome Success(PreparedCase prepared, CompiledMdc mdc, EvaluationContext mdcCtx,
+            CompiledAdrg adrg, CompiledSplit split, string adrgReason, IReadOnlyList<MdcFailure> failures)
+        {
+            // 直赋档复核:必须复核而非按落位码静态下发 —— 同一 DRG 常有多条落位路径
+            // (纯 MCC 也能落 OB11/OB21),静态下发会把常规分档误标成直赋。
+            var direct = split.Direct is { } rule ? SplitTraits.ResolveDirect(rule, mdcCtx) : null;
+
+            return Outcome(GroupStatus.Success, UngroupedReason.None, null,
+                prepared: prepared,
+                mdc: $"MDC{mdc.Code}",
+                code: split.Code,
+                adrgReason: adrgReason,
+                adrgOrigin: adrg.Origin,
+                drgOrigin: split.Origin,
+                drgDirect: direct,
+                tier: split.Tier,
+                mdcFailures: failures);
         }
 
         // ---------------- 轨迹与结果 ----------------
@@ -499,9 +331,13 @@ public sealed class GrouperEngine
 
         private GroupOutcome Outcome(
             GroupStatus status, UngroupedReason reason, string? reasonText,
+            PreparedCase? prepared = null,
+            IReadOnlyList<CodeMapping>? mappings = null,
             string? mdc = null, string? code = null,
-            IReadOnlyList<string>? mcc = null, IReadOnlyList<string>? cc = null, IReadOnlyList<string>? valid = null,
-            string? adrgReason = null)
+            string? adrgReason = null, string? adrgOrigin = null,
+            string? drgOrigin = null, string? drgDirect = null,
+            SeverityTier? tier = null,
+            IReadOnlyList<MdcFailure>? mdcFailures = null)
         {
             // 0000 = 官方 drg.csv 的**全局兜底行**(code=0000 / adrg=000 / mdc=0000 / 名称为空,is_fallback=1)。
             // 它的语义是"没有可用 DRG",不是入组成功 —— 不在这里拦下,单例与批量都会显示
@@ -515,6 +351,8 @@ public sealed class GrouperEngine
                 reasonText = "无有效 DRG:落位到官方全局兜底行 0000(该码无名称,MDC/ADRG 均为占位),不计入组成功";
                 code = null;
                 mdc = null;   // MDC0000 与 DRG 0000 同属占位,留着会让界面显示一个不存在的系统
+                drgOrigin = null;   // 占位码没有"官方条件原文"可言
+                tier = null;
             }
 
             // 码字段仅承载真实结果:未入组不产生 "0000"/"QY" 等哨兵形态,
@@ -535,14 +373,20 @@ public sealed class GrouperEngine
                 Mdc = mdc,
                 Adrg = adrg,
                 AdrgReason = adrgReason,
+                AdrgOrigin = adrgOrigin,
                 Code = code,
                 Group = status == GroupStatus.Success && _pack.Groups.TryGetValue(code!, out var g) ? g : null,
+                DrgOrigin = drgOrigin,
+                DrgDirect = drgDirect,
+                Tier = tier,
+                MdcFailures = mdcFailures ?? [],
                 Trace = _steps ?? [],
-                Mappings = _mappings,
-                ExcludedComplications = _excludedComplications,
-                MajorComplications = mcc ?? [],
-                MinorComplications = cc ?? [],
-                ValidProcedures = valid ?? [],
+                Mappings = mappings ?? prepared?.Mappings ?? [],
+                ExcludedComplications = prepared?.ExcludedComplications ?? [],
+                MajorComplications = prepared?.MajorComplications ?? [],
+                MinorComplications = prepared?.MinorComplications ?? [],
+                ValidProcedures = prepared?.ValidProcedures ?? [],
+                Prepared = prepared,
             };
         }
     }

@@ -59,29 +59,13 @@ internal static class GroupEndpoints
                 VerboseTrace = req.Verbose == true,
                 CodeSystem = system,
             });
-            // ADRG 的 origin(rules 内官方入组条件原文)是权威描述,优先于引擎生成的条件树描述
-            string? adrgOrigin = null;
-            if (outcome.Adrg is not null && svc.AdrgInfo.TryGetValue(outcome.Adrg, out var adrgMeta) && !string.IsNullOrEmpty(adrgMeta.Cond))
-            {
-                outcome = outcome with { AdrgReason = adrgMeta.Cond };
-                adrgOrigin = adrgMeta.Cond;
-            }
-            // 费用数据随分组结果一次下发(RW/参考费用来自请求级区域包),前端无需二次请求费用接口
+            // 判定结论(官方条件原文 adrgOrigin/drgOrigin、分档 tier、直赋档 drgDirect)一律随
+            // GroupOutcome 下发,本端点不再往 JSON 节点上补字段 —— 那些字段原先由宿主的派生索引
+            // 按码回查,同一个事实有两处来源(见 WebApp/PackIndexes 的说明)。
             var node = JsonSerializer.SerializeToNode(outcome, ApiJsonOpts);
             if (node is not null)
             {
-                // adrgOrigin 与 adrgReason 同值但语义不同:前者是官方原文(前端"条件原文"直接取用),
-                // 后者是给未升级前端/日志看的兼容字段。二者都来自 rules 内该 ADRG 的 origin。
-                if (adrgOrigin is not null)
-                    node["adrgOrigin"] = JsonSerializer.SerializeToNode(adrgOrigin, ApiJsonOpts);
-                // drgOrigin = 细分组(DRG)的官方条件原文(rules 内 split.origin,合并症等级/年龄属性/特殊入组条件三列综合)
-                if (!string.IsNullOrEmpty(outcome.Code) && svc.DrgOrigin.TryGetValue(outcome.Code, out var drgOrigin))
-                    node["drgOrigin"] = JsonSerializer.SerializeToNode(drgOrigin, ApiJsonOpts);
-                // drgDirect = 直赋档说明(高危妊娠直赋/机器人直赋):前端标题优先于 MCC/CC 推断文案。
-                // 判定按 split 条件,与批量路径共用 ResolveDirect(口径单一)。
-                var drgDirect = svc.ResolveDrgDirect(outcome, record, system);
-                if (drgDirect is not null)
-                    node["drgDirect"] = JsonSerializer.SerializeToNode(drgDirect, ApiJsonOpts);
+                // 费用数据随分组结果一次下发(RW/参考费用来自请求级区域包),前端无需二次请求费用接口
                 var fee = FeeJoin.FeeInfo(outcome.Code, rp);
                 if (fee is not null)
                     node["fee"] = JsonSerializer.SerializeToNode(fee, ApiJsonOpts);
@@ -163,6 +147,9 @@ internal static class GroupEndpoints
 
                 var outRows = new List<BatchRow>();
                 int okCount = 0, failCount = 0, parseErrorCount = 0, lineNo = 0;
+                // 逐行装配配方(分组开关 / 计费 join / 明细列 / 裁剪顺序)收在 BatchRun 一处,
+                // 与 HIS 按日期提取路径共用同一份 —— 见该类型注释。
+                var run = new BatchRun(svc, system, rp, level, type);
                 foreach (var r in dataRows)
                 {
                     lineNo++;
@@ -183,24 +170,20 @@ internal static class GroupEndpoints
                     var weightRaw = Get(idx.Weight);
                     // 识别类列:解析失败的行也要带上,否则用户拿着一张"第 37 行性别不识别"
                     // 的结果找不到那是哪位病人(病案号是回 HIS 核对的唯一凭据)。
-                    string? recNo = Get(idx.RecordNo), visitNo = Get(idx.VisitNo);
-                    // 个人信息:屏幕过脱敏开关,导出 CSV 不脱敏(用户已定口径)。
-                    string? nameRaw = Get(idx.PatientName), idNoRaw = Get(idx.IdNo);
-                    string? admitAt = Get(idx.AdmitAt), dischargeAt = Get(idx.DischargeAt);
+                    var ids = new RowIds(
+                        RecordNo: Get(idx.RecordNo), VisitNo: Get(idx.VisitNo),
+                        AdmitAt: Get(idx.AdmitAt), DischargeAt: Get(idx.DischargeAt),
+                        PatientName: Get(idx.PatientName), IdNo: Get(idx.IdNo));
                     var (rec, err, summary) = BatchParsing.BuildRecord($"C{lineNo:0000}", genderRaw, ageRaw, mainDxRaw, otherDx, procedures, ageDayRaw, weightRaw);
                     if (err is not null)
                     {
                         parseErrorCount++;
-                        outRows.Add(new BatchRow(lineNo, summary, Error: err).WithIds(recNo, visitNo, admitAt, dischargeAt, nameRaw, idNoRaw));
+                        outRows.Add(BatchRun.ErrorRow(lineNo, summary, err, ids));
                         continue;
                     }
-                    // 文件批量与单病例同一编码版本口径(默认国临版→转医保版)
-                    var outcome = svc.Engine.Group(rec!, new GroupingOptions { Trace = true, CodeSystem = system });
+                    var (row, outcome) = run.GroupedRow(lineNo, summary, rec!, ids);
                     if (outcome.Status == GroupStatus.Success) okCount++; else failCount++;
-                    outRows.Add(BatchParsing.TrimDetail(FeeJoin.WithFee(BatchParsing.OutcomeRow(lineNo, summary, outcome,
-                        drgDirect: svc.ResolveDrgDirect(outcome, rec!, system)), rp)
-                        .WithCase(rec!).WithIds(recNo, visitNo, admitAt, dischargeAt, nameRaw, idNoRaw)
-                        .WithFeeEstimate(svc, rp, level, type)));
+                    outRows.Add(row);
                 }
 
                 var matchedColumns = new[] { idx.Gender, idx.Age, idx.MainDx, idx.MainProc, idx.AgeDay, idx.Weight }

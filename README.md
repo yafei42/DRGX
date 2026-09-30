@@ -9,7 +9,7 @@
 
 | | |
 |---|---|
-| 程序版本 | 1.0.0 |
+| 程序版本 | 1.1.0 |
 | 分组方案 | CHS-DRG 3.0（2026-09-09 版配置信息） |
 | 规则来源 | 国家医保局 2026-09-09 公开的《按病组（DRG）付费3.0版分组方案配置信息（更新）》（[官方公开页](https://www.nhsa.gov.cn/art/2026/9/9/art_14_22070.html)） |
 | 界面 | 默认 http://localhost:8080/ |
@@ -307,8 +307,8 @@ LICENSE  NOTICE         许可证与第三方组件声明
 
 | 包 | 压缩包大小 | 前提 |
 |---|---|---|
-| `drgx-1.0.0-standalone.zip` | 约 34 MB | 无 —— 解压即用 |
-| `drgx-1.0.0-fdd.zip` | 约 18 MB | 需 ASP.NET Core 10 运行时（缺则退出码 150） |
+| `drgx-1.1.0-standalone.zip` | 约 34 MB | 无 —— 解压即用 |
+| `drgx-1.1.0-fdd.zip` | 约 18 MB | 需 ASP.NET Core 10 运行时（缺则退出码 150） |
 
 从本仓库 clone 下来**得不到** `DRGX.exe`：需在装有 .NET 10 SDK 的机器上执行
 `scripts\pack-release.bat` 自行构建（`/fdd` 出 fdd 形态，默认为 standalone），
@@ -328,7 +328,7 @@ LICENSE  NOTICE         许可证与第三方组件声明
 
 报告时请一并给出这四项，能直接定位到具体规则条目：
 
-- **包名**（如 `drgx-1.0.0-standalone`）—— 区分 standalone / fdd 两种形态；
+- **包名**（如 `drgx-1.1.0-standalone`）—— 区分 standalone / fdd 两种形态；
 - 病例的**主要诊断编码与手术操作编码**（多用几例更能看出规律）；
 - 界面上给出的 **MDC / ADRG / DRG 三级编码**；
 - 「判定依据」面板的截图（它按 MDC → ADRG → DRG 逐层列出条件与命中事实）。

@@ -34,14 +34,14 @@ internal static class OfficialSetTree
 
     public const string Desc = "官方打包好的编码集合,被各 ADRG 的入组条件直接引用:类型 → 集合号,成员编码在右侧按需加载";
 
-    /// <summary>本树覆盖的官方 sheet(表源说明用:前缀是工作簿文件名,由 OfficialTable.WorkbookName 提供)。</summary>
+    /// <summary>本树覆盖的官方 sheet(表源说明用:前缀是工作簿文件名,由 OfficialPackView.FileName 提供)。</summary>
     public const string SourceSheets = "集合";
 
     /// <summary>
     /// 由本树统一呈现的表:集合索引是树的第一/二级来源,集合成员是右栏的懒加载来源,
     /// 两者都不再各自成页(见 OfficialEndpoints 的表清单组装)。
     /// </summary>
-    public static readonly string[] MemberIds = ["csindex", "codesets"];
+    public static readonly string[] MemberIds = [OfficialWorkbook.CodeSetIndexTable, OfficialWorkbook.CodeSetsTable];
 
     /// <summary>集合类型 → 中文名。官方 type 列只有 DI / OP 两个取值,且全表无例外。</summary>
     private static readonly Dictionary<string, string> TypeNames = new(StringComparer.OrdinalIgnoreCase)
@@ -50,9 +50,9 @@ internal static class OfficialSetTree
         ["OP"] = "手术操作编码集合",
     };
 
-    public static OfficialSetTreeResult Build(string dir)
+    public static OfficialSetTreeResult Build(OfficialWorkbook book)
     {
-        var idx = OfficialTable.Load(dir, OfficialTable.ById("csindex")!);
+        var idx = book.Table(OfficialWorkbook.CodeSetIndexTable);
         var setCol = idx.IndexOf("set_id");
         if (setCol < 0)   // 列缺失(非官方形态的表):给空树,不抛 —— 与"表缺失则整表不出现"同一口径
             return new OfficialSetTreeResult([], Levels(0, 0), 0);

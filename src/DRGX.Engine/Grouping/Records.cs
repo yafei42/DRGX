@@ -173,11 +173,33 @@ public sealed record GroupOutcome
     public string? Adrg { get; init; }
     /// <summary>ADRG 入组路径的自然语言描述(v3 entry 条件),分组成功时由引擎填充。</summary>
     public string? AdrgReason { get; init; }
+    /// <summary>命中 ADRG 的官方入组条件原文(<see cref="CompiledAdrg.Origin"/>),分组成功时填充。
+    /// 与 <see cref="AdrgReason"/> 的区别:前者是官方原文(界面「条件原文」直接取用),后者是
+    /// 引擎按条件树生成的自然语言描述。原先由宿主的 adrg-info 派生索引提供,现随结果一并下发。</summary>
+    public string? AdrgOrigin { get; init; }
     /// <summary>DRG 码;分组成功时为真实 DRG 码;歧义病案时为 {"MDC"}QY 虚拟组码(如 "FQY",
     /// 不在 825 组内,官方 2.0 术语定义);其余为 null。</summary>
     public string? Code { get; init; }
     /// <summary>命中的 DRG 组元数据(成功时)。</summary>
     public GroupInfo? Group { get; init; }
+    /// <summary>命中 DRG 档位的官方条件原文(<see cref="CompiledSplit.Origin"/>),成功时填充。
+    /// 原先由宿主的 drg-origin 派生索引按 DRG 码回查,现随结果一并下发。</summary>
+    public string? DrgOrigin { get; init; }
+    /// <summary>落位是否为直赋档(机器人直赋 / 高危妊娠直赋)且病例**确实命中**其特殊身份条件;
+    /// 命中时为本档说明文案,否则 null。判定由引擎在命中档位处完成
+    /// (见 <see cref="SplitTraits.ResolveDirect"/>) —— 消费端不再需要按 DRG 码回查规则再复核。
+    ///
+    /// <para>属性名保持 <c>DrgDirect</c>(序列化为 <c>drgDirect</c>)以兼容既有前端。</para></summary>
+    public string? DrgDirect { get; init; }
+    /// <summary>落位档位的分档(伴严重并发症 / 伴并发症 / 不伴并发症),成功时填充。
+    /// 由命中的 split 条件派生,不是 MCC/CC 计数推断 —— 详见 <see cref="SeverityTier"/>。</summary>
+    public SeverityTier? Tier { get; init; }
+    /// <summary><see cref="Tier"/> 的中文文案(与 <see cref="Status"/>/<see cref="StatusText"/> 同口径:
+    /// 机读名与人类可读文案一并下发,消费端不另写一份映射)。</summary>
+    public string? TierText => Tier is null ? null : SplitTraits.Label(Tier.Value);
+    /// <summary>各 MDC 未落位的聚合原因(结构化)。原先只有非 verbose 的 <c>mdcNotPlaced</c> 一行文案
+    /// 承载"多为「…」",消费端想按 MDC 取这条结论只能解析中文句子。</summary>
+    public IReadOnlyList<MdcFailure> MdcFailures { get; init; } = [];
     /// <summary>判定轨迹(按发生顺序)。</summary>
     public IReadOnlyList<TraceStep> Trace { get; init; } = [];
     /// <summary>编码映射记录(结构化)。</summary>
@@ -191,6 +213,19 @@ public sealed record GroupOutcome
     /// <summary>命中有效操作清单的操作列表。</summary>
     public IReadOnlyList<string> ValidProcedures { get; init; } = [];
 
+    /// <summary>
+    /// 本次判定实际依据的待判定病案(规范化后的码、MCC/CC、机器人标志、有效操作集合)。
+    /// 入组校验不通过(<see cref="GroupStatus.CheckFailed"/>)时为 null。
+    ///
+    /// <para>引擎的完整账目:有了它,"引擎到底判定了哪些码"不必再由消费端重推
+    /// (原先宿主 <c>WebApp.ResolveDrgDirect</c> 重做码映射、测试 <c>Ctx.Build()</c> 手工拼上下文)。
+    /// 不进响应 —— 它是判定依据而非展示内容,且规范化后的诊断/操作列表与
+    /// <see cref="Mappings"/> / <see cref="MajorComplications"/> 大量重复,逐行下发会让
+    /// 十万行的批量响应凭空变大。</para>
+    /// </summary>
+    [System.Text.Json.Serialization.JsonIgnore]
+    public PreparedCase? Prepared { get; init; }
+
     public string StatusText => Status switch
     {
         GroupStatus.Success => "分组成功",
@@ -200,5 +235,18 @@ public sealed record GroupOutcome
         _ => Status.ToString(),
     };
 }
+
+/// <summary>某个 MDC 未落位的聚合原因。
+/// <paramref name="DominantReason"/> 是候选失败原因里占多数的那一条(需过半;原因分散时为 null)——
+/// 宁可少说一句,不可把局部原因说成普遍原因。</summary>
+/// <param name="MdcCode">MDC 码。</param>
+/// <param name="DominantReason">多数候选的失败原因;原因分散时为 null。</param>
+/// <param name="Candidates">本 MDC 内真正参与判定的核心组数(不含按手术病例规则跳过的内科组)。</param>
+/// <param name="SkippedMedical">本 MDC 内按"手术病例"规则跳过的内科组数(流程排除,非条件不满足)。</param>
+public sealed record MdcFailure(
+    string MdcCode,
+    string? DominantReason,
+    int Candidates,
+    int SkippedMedical);
 
 

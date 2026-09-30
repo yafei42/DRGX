@@ -45,14 +45,14 @@ internal static class OfficialTree
 
     public const string Desc = "分组主干的三级层级:MDC 大类 → ADRG 核心组 → DRG 细分组";
 
-    /// <summary>本树覆盖的官方 sheet(表源说明用:前缀是工作簿文件名,由 OfficialTable.WorkbookName 提供)。</summary>
+    /// <summary>本树覆盖的官方 sheet(表源说明用:前缀是工作簿文件名,由 OfficialPackView.FileName 提供)。</summary>
     public const string SourceSheets = "MDC / ADRG / DRG";
 
-    public static OfficialTreeResult Build(string dir)
+    public static OfficialTreeResult Build(OfficialWorkbook book)
     {
-        var mdc = OfficialTable.Load(dir, OfficialTable.ById("mdc")!);
-        var adrg = OfficialTable.Load(dir, OfficialTable.ById("adrg")!);
-        var drg = OfficialTable.Load(dir, OfficialTable.ById("drg")!);
+        var mdc = book.Table(OfficialWorkbook.MdcTable);
+        var adrg = book.Table(OfficialWorkbook.AdrgTable);
+        var drg = book.Table(OfficialWorkbook.DrgTable);
 
         var levels = new int[3, 3];   // [层, 0=入树数 1=剔除的 00 类数 2=其中的歧义组数]
 

@@ -12,4 +12,8 @@
   <Project Path="src/plugins/DRGX.Fee.PointValue/DRGX.Fee.PointValue.csproj" />
   <Project Path="src/plugins/DRGX.Fee.DirectPayment/DRGX.Fee.DirectPayment.csproj" />
   <Project Path="src/plugins/DRGX.His.SqlServer/DRGX.His.SqlServer.csproj" />
+
+  <!-- 测试(tests/):不进发布包(pack-release.bat 只 publish DRGX.Host,data/configs 之外
+       的目录不复制),但放在同一个解决方案里,让"改了引擎就要能跑起回归"成为默认动作。 -->
+  <Project Path="tests/DRGX.Tests/DRGX.Tests.csproj" />
 </Solution>

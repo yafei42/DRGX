@@ -148,7 +148,25 @@ public sealed class OfficialWorkbook
         {
             if (Cache.TryGetValue(path, out var hit) && Stamp.TryGetValue(path, out var old) && old == stamp)
                 return hit;
-            var loaded = Build(path, amendmentsPath);
+
+            // 解析失败(xlsx 不是有效 zip / 缺 sheet / 列缺失)在 DRGX.Text 层是 InvalidDataException ——
+            // 那一层不该认识"包"这个概念,所以翻译放在这里。本层对外的契约是 PackException:
+            // 端点按它把"读不出工作簿"转成 404,启动路径按它给出友好报错。
+            // 不翻译的后果很具体:运行期工作簿损坏 → 5 个浏览端点全 500(而契约写着 404);
+            // 启动期损坏 → 直接抛未处理异常,操作员看到的是一屏调用栈而不是"工作簿坏了"。
+            // 契约由 OfficialWorkbookTests.CorruptWorkbookSurfacesAsPackExceptionNotInvalidDataException 钉住。
+            OfficialWorkbook loaded;
+            try
+            {
+                loaded = Build(path, amendmentsPath);
+            }
+            catch (InvalidDataException ex)
+            {
+                throw new PackException(
+                    $"官方工作簿无法解析: {System.IO.Path.GetFileName(path)} — {ex.Message}\n" +
+                    "  该文件可能未下载完整、被其他程序改写,或不是分组方案配置信息工作簿。");
+            }
+
             Cache[path] = loaded;
             Stamp[path] = stamp;
             return loaded;

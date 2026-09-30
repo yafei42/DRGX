@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <IsPackable>false</IsPackable>
+    <!-- 断言消息里会出现中文码表名与诊断名,固定为 UTF-8 输出,避免测试控制台乱码。 -->
+    <InvariantGlobalization>false</InvariantGlobalization>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DRGX.Engine\DRGX.Engine.csproj" />
+    <ProjectReference Include="..\..\src\DRGX.Text\DRGX.Text.csproj" />
+  </ItemGroup>
+
+  <!--
+    DRGX.Tests —— 分组引擎的回归闸门。
+
+    覆盖方式见各测试文件头部的说明;一句话:每个可达 DRG 组都要有一条经真实引擎验证过的
+    witness 病案(GroupCoverageTests),每条 witness 再派生若干边界探针(阈值两侧 ±1、
+    去掉并发症/手术/翻转性别)并冻结期望落点(BoundaryCaseTests),官方数据未用到的
+    条件原语由合成小数据包逐条测边界(ConditionPrimitiveTests)。
+
+    用例数据不是手写的:cases/ 下的 *.jsonl 由 Generation/ 下的生成器反推规则树产出
+    并经引擎自校验。重新生成的命令写在 CaseGenerationTests 的类注释里(默认不跑)。
+  -->
+
+</Project>

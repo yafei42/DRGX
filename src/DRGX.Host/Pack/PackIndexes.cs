@@ -6,8 +6,14 @@ namespace DRGX.Host;
 /// 数据包的派生索引:全部是 <c>DataPack → 查找表</c> 的纯派生(无 IO、无插件、无副作用)。
 ///
 /// <para>与 <c>Pack/PackRuntime.cs</c> 的区别:PackRuntime 负责"把数据包读进来",
-/// 本类负责"从读进来的包算出宿主要用的视图"(ADRG 入组明细 / DRG 条件原文 / 直赋档规则)。
+/// 本类负责"从读进来的包算出宿主要用的**展示**视图"(ADRG 入组明细 / 码表规模)。
 /// 两者都只在启动期跑一次,但变更理由不同:换数据格式动前者,加展示维度动后者。</para>
+///
+/// <para>注意边界:凡是**判定结论**(分档、直赋档、官方条件原文、有效操作)都不在这里 ——
+/// 它们随 <c>GroupOutcome</c> 由引擎下发(见 DRGX.Engine 的 SplitTraits 与 PreparedCase)。
+/// 本类原先还派生过 drg-origin / drg-direct 两张按 DRG 码回查的表,那是把引擎的规则解读
+/// 复制到了宿主侧:同一个 DRG 的落位分档要由消费端重推,且每次新增特例都要再补一张表。
+/// 现已收进引擎。</para>
 /// </summary>
 internal static class PackIndexes
 {
@@ -50,58 +56,5 @@ internal static class PackIndexes
             case ConditionKind.MainProcedureIn: proc.UnionWith(node.CodeSet); break;
         }
         foreach (var child in node.Children) CollectCodeCounts(child, dx, proc);
-    }
-
-    /// <summary>收集全部 DRG 细分组的 origin 条件原文(DRG码 → split.origin)。</summary>
-    public static Dictionary<string, string> BuildDrgOrigin(DataPack pack)
-    {
-        var map = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var mdc in pack.MdcChain)
-            foreach (var adrg in mdc.Adrgs)
-                foreach (var split in adrg.Splits)
-                    if (!string.IsNullOrWhiteSpace(split.Origin))
-                        map[split.Code] = split.Origin;
-        return map;
-    }
-
-    /// <summary>
-    /// 收集直赋档 DRG(DRG码 → 直赋规则):split.when 含 robotAssist → 机器人直赋(脚注18,
-    /// 直赋优先于合并症分档);含 mainDiagnosisIn → 高危妊娠直赋(当前包仅 OB11/OB21)。
-    /// 由 rules 的 when 结构派生,不改动 origin 官方原文。
-    /// 高危妊娠档附带原条件(Probe)供请求期复核主诊断——同一 DRG 也可能由纯 MCC 命中落位,
-    /// 静态映射无法区分,故不能只看落位码。
-    /// </summary>
-    public static Dictionary<string, DrgDirectRule> BuildDrgDirect(DataPack pack)
-    {
-        var map = new Dictionary<string, DrgDirectRule>(StringComparer.OrdinalIgnoreCase);
-        foreach (var mdc in pack.MdcChain)
-            foreach (var adrg in mdc.Adrgs)
-                foreach (var split in adrg.Splits)
-                {
-                    var rule = SplitDirectRule(split.When);
-                    if (rule is not null) map[split.Code] = rule;
-                }
-        return map;
-    }
-
-    /// <summary>从 split.when 派生直赋规则:robotAssist → 机器人直赋(触发码表在 DataPack,
-    /// 与 GrouperEngine 同源);mainDiagnosisIn → 高危妊娠直赋(带原条件供按 811 清单复核)。
-    /// 沿 any/all 下钻取首个直赋条件——any 首中语义下即规则里的优先分支。</summary>
-    private static DrgDirectRule? SplitDirectRule(Condition? when)
-    {
-        if (when is null) return null;
-        switch (when.Kind)
-        {
-            case ConditionKind.RobotAssist: return new DrgDirectRule(DrgDirectKind.Robot, "机器人直赋", null);
-            case ConditionKind.MainDiagnosisIn: return new DrgDirectRule(DrgDirectKind.HighRisk, "高危妊娠直赋", when);
-            case ConditionKind.Any or ConditionKind.All:
-                foreach (var child in when.Children)
-                {
-                    var found = SplitDirectRule(child);
-                    if (found is not null) return found;
-                }
-                return null;
-            default: return null;
-        }
     }
 }

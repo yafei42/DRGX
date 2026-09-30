@@ -22,6 +22,17 @@ public sealed record CompiledSplit(string Code, Condition? When, string Label)
     /// <summary>官方入组条件原文（rules 内 split.origin，由合并症等级/年龄属性/特殊入组条件三列综合），
     /// 仅展示/溯源用，不参与求值。</summary>
     public string Origin { get; init; } = "";
+
+    /// <summary>本档的分档（伴严重并发症 / 伴并发症 / 不伴并发症），由 <see cref="When"/> 派生。
+    ///
+    /// <para>刻意做成**计算属性**而非 <c>init</c> 属性：init 只在构造时算一次，<c>with { When = … }</c>
+    /// 之后就会与 When 脱节；计算属性恒与 When 一致，也不会给 record 的值相等性引入惰性状态。
+    /// when 树只有几个节点，每次访问重走一遍的代价可忽略。</para></summary>
+    public SeverityTier Tier => SplitTraits.TierOf(When);
+
+    /// <summary>本档是否为直赋档（机器人直赋 / 高危妊娠直赋），由 <see cref="When"/> 派生；非直赋为 null。
+    /// 请求期是否**确实**命中特殊身份条件，另经 <see cref="SplitTraits.ResolveDirect"/> 复核。</summary>
+    public DirectRule? Direct => SplitTraits.DirectRuleOf(When);
 }
 
 /// <summary>编译后的 MDC 门控与 ADRG 规则（scheme.json 的运行时形态）。</summary>
@@ -89,7 +100,12 @@ public sealed class DataPack
     public required IReadOnlyList<PrimaryGroupInfo> PrimaryGroups { get; init; }
     public required FrozenDictionary<string, GroupInfo> Groups { get; init; }
     public required IReadOnlyList<CompiledMdc> MdcChain { get; init; }
-    /// <summary>覆盖率警告：groups 中存在但无任何落位规则可输出的码。</summary>
+    /// <summary>本包全部**可达落位码**:每条 split 的码 ∪ QY 白名单动态产出的 <c>{MDC}QY</c>。
+    /// 由 <see cref="PackCoverage.Emitted"/> 在装载期算一次 —— 测试与覆盖率告警都读它,
+    /// 不再各自从 <see cref="MdcChain"/> 重推一遍(重推会与装载轨的判据分叉)。</summary>
+    public required FrozenSet<string> EmittedCodes { get; init; }
+    /// <summary>覆盖率警告：<see cref="Groups"/> 中存在但无任何落位规则可输出的码。
+    /// 官方包应为空(850 条 split 码 + 21 个 QY = 871 = 组表行数)。</summary>
     public required IReadOnlyList<string> UnreachableGroups { get; init; }
 }
 

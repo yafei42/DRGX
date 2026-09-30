@@ -13,6 +13,9 @@ namespace DRGX.Host;
 //   * 外键即下钻 —— 可用于钻取的表 id/列成对下发,前端渲染成链接,
 //     组合 f(列)+ v(值)即可切到目标表的对应行。
 // 只读,绝不写包。
+//
+// 五个 handler 一律走 OfficialPackView:打开视图、取表、表源说明、集合编号、两棵树、
+// 筛选/排序/分页,都由它回答 —— 这些原先在每个 handler 里各写一遍,文案与默认值已经开始分叉。
 // ============================================================================
 
 internal static class OfficialEndpoints
@@ -22,75 +25,79 @@ internal static class OfficialEndpoints
         // ---- 表清单:列定义 + 行计数 + 集合编号(dsl 列下钻判定用) ----
         app.MapGet("/api/official/tables", IResult () =>
         {
-            var dir = OfficialTable.DirOf(svc.PackPath);
-            if (!OfficialTable.Available(dir))
-                return Results.Ok(new { dir, exists = false, tables = Array.Empty<object>(), setIds = Array.Empty<string>() });
+            var view = OfficialPackView.Open(svc.PackPath);
+            if (view is null)
+                return Results.Ok(new { dir = NoWorkbookDir(svc), exists = false, tables = Array.Empty<object>(), setIds = Array.Empty<string>() });
 
-            // 分组主干(MDC/ADRG/DRG)与编码集合都是层级数据:先算出层级与计数(表已随工作簿装在内存,
-            // 成本为一次内存遍历),再按"主干在前、集合垫底"的顺序把它们插进清单。
-            var tree = OfficialTree.Build(dir);
-            var sets = OfficialSetTree.Build(dir);
-            var book = OfficialTable.WorkbookName(dir);
-
-            var list = new List<object>
+            try
             {
-                new
+                // 分组主干(MDC/ADRG/DRG)与编码集合都是层级数据:先算出层级与计数(表已随工作簿装在内存,
+                // 成本为一次内存遍历),再按"主干在前、集合垫底"的顺序把它们插进清单。
+                var tree = view.Tree();
+                var sets = view.SetTree();
+                var book = view.FileName;
+
+                var list = new List<object>
                 {
-                    id = OfficialTree.Id,
-                    label = OfficialTree.Label,
-                    desc = OfficialTree.Desc,
-                    file = $"{book} · {OfficialTree.SourceSheets}",   // 表源说明:不是单个文件,而是工作簿的三张 sheet
-                    kind = "tree",                                     // 前端据此切树视图(不分页/不排序)
-                    total = tree.Levels.Sum(l => l.Count),             // 入树节点数(不含 00 类)
-                    levels = tree.Levels,
-                    zeroTotal = tree.ZeroTotal,                        // 被剔除的 00 类档数(表源说明如实标注)
-                    cols = Array.Empty<object>(),
-                },
-            };
+                    new
+                    {
+                        id = OfficialTree.Id,
+                        label = OfficialTree.Label,
+                        desc = OfficialTree.Desc,
+                        file = $"{book} · {OfficialTree.SourceSheets}",   // 表源说明:不是单个文件,而是工作簿的三张 sheet
+                        kind = "tree",                                     // 前端据此切树视图(不分页/不排序)
+                        total = tree.Levels.Sum(l => l.Count),             // 入树节点数(不含 00 类)
+                        levels = tree.Levels,
+                        zeroTotal = tree.ZeroTotal,                        // 被剔除的 00 类档数(表源说明如实标注)
+                        cols = Array.Empty<object>(),
+                    },
+                };
 
-            foreach (var def in OfficialTable.Definitions)
-            {
-                if (OfficialTable.TreeMemberIds.Contains(def.Id)) continue;   // 已并入分组主干树
-                // 集合两表在集合树建成时并入它;树建不起来(索引列缺失)则退回平表,
-                // 免得一处退化把成员明细也一起挡在门外。
-                if (OfficialSetTree.MemberIds.Contains(def.Id)) continue;
-                var table = OfficialTable.Load(dir, def);
+                foreach (var def in OfficialTable.Definitions)
+                {
+                    if (OfficialTable.TreeMemberIds.Contains(def.Id)) continue;   // 已并入分组主干树
+                    // 集合两表在集合树建成时并入它;树建不起来(索引列缺失)则退回平表,
+                    // 免得一处退化把成员明细也一起挡在门外。
+                    if (OfficialSetTree.MemberIds.Contains(def.Id)) continue;
+                    var table = view.Table(def.Id);
+                    list.Add(new
+                    {
+                        id = def.Id,
+                        label = def.Label,
+                        desc = def.Desc,
+                        file = view.SourceOf(def.Id),
+                        total = table.Rows.Length,
+                        cols = def.Columns.Select(c => new
+                        {
+                            key = c.Key,
+                            label = c.Label,
+                            format = c.Format,
+                            mono = c.Mono,
+                            dsl = c.Dsl,
+                            hint = c.Hint,
+                            link = c.LinkTable is null ? null : new { table = c.LinkTable, col = c.LinkColumn },
+                        }),
+                    });
+                }
+
+                // 编码集合树垫底(它是规则引用的词表,不是分组骨架;主干树在前、明细表居中)
                 list.Add(new
                 {
-                    id = def.Id,
-                    label = def.Label,
-                    desc = def.Desc,
-                    file = OfficialTable.SourceOf(dir, def.Id),
-                    total = table.Rows.Length,
-                    cols = def.Columns.Select(c => new
-                    {
-                        key = c.Key,
-                        label = c.Label,
-                        format = c.Format,
-                        mono = c.Mono,
-                        dsl = c.Dsl,
-                        hint = c.Hint,
-                        link = c.LinkTable is null ? null : new { table = c.LinkTable, col = c.LinkColumn },
-                    }),
+                    id = OfficialSetTree.Id,
+                    label = OfficialSetTree.Label,
+                    desc = OfficialSetTree.Desc,
+                    file = $"{book} · {OfficialSetTree.SourceSheets}",
+                    kind = "tree",
+                    total = sets.Levels.Sum(l => l.Count),
+                    levels = sets.Levels,
+                    zeroTotal = 0,                          // 无 00 类口径:字段留着是为了两棵树同形
+                    memberTotal = sets.MemberTotal,          // 全部集合的成员合计(右栏按需加载,不随树下发)
+                    cols = Array.Empty<object>(),
                 });
+
+                return Results.Ok(new { dir = view.Dir, exists = true, tables = list, setIds = view.SetIds() });
             }
-
-            // 编码集合树垫底(它是规则引用的词表,不是分组骨架;主干树在前、明细表居中)
-            list.Add(new
-            {
-                id = OfficialSetTree.Id,
-                label = OfficialSetTree.Label,
-                desc = OfficialSetTree.Desc,
-                file = $"{book} · {OfficialSetTree.SourceSheets}",
-                kind = "tree",
-                total = sets.Levels.Sum(l => l.Count),
-                levels = sets.Levels,
-                zeroTotal = 0,                          // 无 00 类口径:字段留着是为了两棵树同形
-                memberTotal = sets.MemberTotal,          // 全部集合的成员合计(右栏按需加载,不随树下发)
-                cols = Array.Empty<object>(),
-            });
-
-            return Results.Ok(new { dir, exists = true, tables = list, setIds = OfficialTable.SetIds(dir) });
+            catch (PackException ex) { return LoadFailed(ex); }
         });
 
         // ---- 层级树:?t=tree(分组主干 MDC → ADRG → DRG) / ?t=sets(编码集合 类型 → 集合) ----
@@ -100,14 +107,14 @@ internal static class OfficialEndpoints
         // 前端不需要"含兜底组"开关,树上的计数与屏幕所见始终同一口径。
         app.MapGet("/api/official/tree", IResult (string? t) =>
         {
-            var dir = OfficialTable.DirOf(svc.PackPath);
-            if (!OfficialTable.Available(dir)) return ApiResults.NotFound($"未找到官方配置信息工作簿: {dir}");
+            var view = OfficialPackView.Open(svc.PackPath);
+            if (view is null) return NoWorkbook(svc);
             var id = string.IsNullOrWhiteSpace(t) ? OfficialTree.Id : t!;
             try
             {
                 if (string.Equals(id, OfficialSetTree.Id, StringComparison.OrdinalIgnoreCase))
                 {
-                    var sets = OfficialSetTree.Build(dir);
+                    var sets = view.SetTree();
                     return Results.Ok(new
                     {
                         levels = sets.Levels,
@@ -119,7 +126,7 @@ internal static class OfficialEndpoints
                 if (!string.Equals(id, OfficialTree.Id, StringComparison.OrdinalIgnoreCase))
                     return ApiResults.BadRequest($"未知层级树: {id}");
 
-                var tree = OfficialTree.Build(dir);
+                var tree = view.Tree();
                 return Results.Ok(new
                 {
                     levels = tree.Levels,
@@ -128,7 +135,7 @@ internal static class OfficialEndpoints
                     nodes = tree.Roots,
                 });
             }
-            catch (PackException ex) { return ApiResults.NotFound(ex.Message); }
+            catch (PackException ex) { return LoadFailed(ex); }
         });
 
         // ---- 集合成员:按集合号取成员清单(编码集合树的右栏懒加载;q 为集合内筛选) ----
@@ -136,16 +143,12 @@ internal static class OfficialEndpoints
         app.MapGet("/api/official/setmembers", IResult (string set, string? q, int? offset, int? limit) =>
         {
             if (string.IsNullOrWhiteSpace(set)) return ApiResults.BadRequest("缺少集合号");
-            var dir = OfficialTable.DirOf(svc.PackPath);
-            if (!OfficialTable.Available(dir)) return ApiResults.NotFound($"未找到官方配置信息工作簿: {dir}");
+            var view = OfficialPackView.Open(svc.PackPath);
+            if (view is null) return NoWorkbook(svc);
 
             OfficialTableData idx, members;
-            try
-            {
-                idx = OfficialTable.Load(dir, OfficialTable.ById("csindex")!);
-                members = OfficialTable.Load(dir, OfficialTable.ById("codesets")!);
-            }
-            catch (PackException ex) { return ApiResults.NotFound(ex.Message); }
+            try { (idx, members) = view.CodeSets(); }
+            catch (PackException ex) { return LoadFailed(ex); }
 
             var setCol = idx.IndexOf("set_id");
             var known = setCol >= 0 && idx.Rows.Any(r => string.Equals(r[setCol], set, StringComparison.OrdinalIgnoreCase));
@@ -155,19 +158,10 @@ internal static class OfficialEndpoints
             if (si < 0) return ApiResults.NotFound("集合成员表缺列: set_id");
             var rows = members.Rows.Where(r => string.Equals(r[si], set, StringComparison.OrdinalIgnoreCase));
             if (!string.IsNullOrWhiteSpace(q))
-                rows = rows.Where(r => r.Any(c => c.Contains(q!, StringComparison.OrdinalIgnoreCase)));
+                rows = rows.Where(r => OfficialPackView.RowContains(r, q!));
 
-            var all = rows.ToArray();
-            var off = Math.Max(0, offset ?? 0);
-            var take = Math.Clamp(limit ?? 300, 1, 1000);
-            return Results.Ok(new
-            {
-                set,
-                total = all.Length,
-                offset = off,
-                limit = take,
-                rows = all.Skip(off).Take(take).Select(members.ToObject),
-            });
+            var page = OfficialPackView.Page(members, rows.ToArray(), offset, limit, PageSpec.Members);
+            return Results.Ok(new { set, page.Total, page.Offset, page.Limit, page.Rows });
         });
 
         // ---- 集合检索:一次覆盖集合号与成员编码/名称(编码集合树的检索框) ----
@@ -175,18 +169,14 @@ internal static class OfficialEndpoints
         // 命中集合与命中成员一并返回,右栏据此给出可点选的落点。
         app.MapGet("/api/official/setsearch", IResult (string? q, int? limit) =>
         {
-            var dir = OfficialTable.DirOf(svc.PackPath);
-            if (!OfficialTable.Available(dir)) return ApiResults.NotFound($"未找到官方配置信息工作簿: {dir}");
+            var view = OfficialPackView.Open(svc.PackPath);
+            if (view is null) return NoWorkbook(svc);
             var key = (q ?? "").Trim();
             OfficialTableData idx, members;
-            try
-            {
-                idx = OfficialTable.Load(dir, OfficialTable.ById("csindex")!);
-                members = OfficialTable.Load(dir, OfficialTable.ById("codesets")!);
-            }
-            catch (PackException ex) { return ApiResults.NotFound(ex.Message); }
+            try { (idx, members) = view.CodeSets(); }
+            catch (PackException ex) { return LoadFailed(ex); }
 
-            var take = Math.Clamp(limit ?? 300, 1, 1000);
+            var take = PageSpec.Members.Clamp(limit);
             if (key.Length == 0)
                 return Results.Ok(new { q = "", sets = Array.Empty<object>(), members = Array.Empty<object>(), memberTotal = 0 });
 
@@ -196,18 +186,16 @@ internal static class OfficialEndpoints
             //     而"看这个集合的成员"是左树选中/点集合命中那一行的动线,不该由检索代劳)。
             var sSet = idx.IndexOf("set_id");
             var sType = idx.IndexOf("type");
-            static bool Has(string[] row, int col, string key) =>
-                col >= 0 && col < row.Length && row[col].Contains(key, StringComparison.OrdinalIgnoreCase);
-
             var hitSets = idx.Rows
-                .Where(r => Has(r, sSet, key) || Has(r, sType, key))
+                .Where(r => OfficialPackView.CellContains(r, sSet, key) || OfficialPackView.CellContains(r, sType, key))
                 .Take(take)
                 .Select(idx.ToObject)
                 .ToArray();
 
             var mCode = members.IndexOf("icd_code");
             var mName = members.IndexOf("icd_name");
-            var memHit = members.Rows.Where(r => Has(r, mCode, key) || Has(r, mName, key));
+            var memHit = members.Rows.Where(r =>
+                OfficialPackView.CellContains(r, mCode, key) || OfficialPackView.CellContains(r, mName, key));
             var hitMembers = memHit.Take(take).Select(members.ToObject).ToArray();
             return Results.Ok(new
             {
@@ -223,12 +211,12 @@ internal static class OfficialEndpoints
         {
             var def = OfficialTable.ById(t ?? "");
             if (def is null) return ApiResults.BadRequest($"未知数据表: {t}");
-            var dir = OfficialTable.DirOf(svc.PackPath);
-            if (!OfficialTable.Available(dir)) return ApiResults.NotFound($"未找到官方配置信息工作簿: {dir}");
+            var view = OfficialPackView.Open(svc.PackPath);
+            if (view is null) return NoWorkbook(svc);
 
             OfficialTableData table;
-            try { table = OfficialTable.Load(dir, def); }
-            catch (PackException ex) { return ApiResults.NotFound(ex.Message); }
+            try { table = view.Table(def.Id); }
+            catch (PackException ex) { return LoadFailed(ex); }
 
             var rows = table.Rows.AsEnumerable();
             // 下钻:该列视为指向目标表某列的外键,值按 IgnoreCase 精确匹配(编码大小写同义)
@@ -239,10 +227,10 @@ internal static class OfficialEndpoints
                 rows = rows.Where(r => string.Equals(r[ci], v, StringComparison.OrdinalIgnoreCase));
             }
             if (!string.IsNullOrWhiteSpace(q))
-                rows = rows.Where(r => r.Any(c => c.Contains(q!, StringComparison.OrdinalIgnoreCase)));
+                rows = rows.Where(r => OfficialPackView.RowContains(r, q!));
 
-            // 排序:sort=列 Key,sortDir=desc 为降序(参数名避开作用域内的 dir=目录)。数值列(前端 format=num)按数值比较,
-            // 而非字典序(否则 10 会排在 9 前面);空值/非数值恒沉底,不随升降序翻到顶部。
+            // 排序:sort=列 Key,sortDir=desc 为降序。数值列(前端 format=num)按数值比较,
+            // 而非字典序(否则 10 会排在 9 前面);空值/非数值恒沉底 —— 口径见 OfficialPackView.CompareCell。
             if (!string.IsNullOrWhiteSpace(sort))
             {
                 var si = table.IndexOf(sort!);
@@ -251,35 +239,23 @@ internal static class OfficialEndpoints
                     def.Columns.FirstOrDefault(c => string.Equals(c.Key, sort, StringComparison.OrdinalIgnoreCase))?.Format,
                     "num", StringComparison.OrdinalIgnoreCase);
                 var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
-                var cmp = Comparer<string[]>.Create((a, b) => CompareCell(a[si], b[si], numeric, desc));
+                var cmp = Comparer<string[]>.Create((a, b) => OfficialPackView.CompareCell(a[si], b[si], numeric, desc));
                 rows = rows.OrderBy(r => r, cmp);
             }
 
             var all = rows as IReadOnlyList<string[]> ?? rows.ToArray();
-            var off = Math.Max(0, offset ?? 0);
-            var take = Math.Clamp(limit ?? 50, 1, 500);
-            return Results.Ok(new
-            {
-                id = def.Id,
-                total = all.Count,
-                offset = off,
-                limit = take,
-                rows = all.Skip(off).Take(take).Select(table.ToObject),
-            });
+            var page = OfficialPackView.Page(table, all, offset, limit, PageSpec.Rows);
+            return Results.Ok(new { id = def.Id, page.Total, page.Offset, page.Limit, page.Rows });
         });
     }
 
-    /// <summary>单元格比较:数值列两侧都可解析时按数值比;空值/非数值恒沉底(与升降序无关)。</summary>
-    private static int CompareCell(string? a, string? b, bool numeric, bool desc)
-    {
-        if (numeric)
-        {
-            var okA = double.TryParse(a, out var da);
-            var okB = double.TryParse(b, out var db);
-            if (okA && okB) return desc ? db.CompareTo(da) : da.CompareTo(db);
-            if (okA != okB) return okA ? -1 : 1;
-        }
-        var r = string.CompareOrdinal(a ?? "", b ?? "");
-        return desc ? -r : r;
-    }
+    /// <summary>官方工作簿所在的目录(供"不走官方轨"的响应如实报出找过的位置)。</summary>
+    private static string NoWorkbookDir(WebApp svc) => OfficialTable.DirOf(svc.PackPath);
+
+    /// <summary>该数据包不走官方轨(目录内没有官方工作簿)。</summary>
+    private static IResult NoWorkbook(WebApp svc) =>
+        ApiResults.NotFound($"未找到官方配置信息工作簿: {NoWorkbookDir(svc)}");
+
+    /// <summary>工作簿读取失败(表缺失 / 格式损坏)。消息来自引擎,原样回给前端便于定位。</summary>
+    private static IResult LoadFailed(PackException ex) => ApiResults.NotFound(ex.Message);
 }

@@ -76,8 +76,9 @@ internal static class RuntimeLoader
                 return null;
             }
 
-            // RootElement.Clone():doc 出 using 后仍要持有这份 JSON 交给插件
-            var ctx = new PluginContext(Path.GetDirectoryName(path) ?? "", path, root.Clone());
+            // RootElement.Clone():doc 出 using 后仍要持有这份 JSON 交给插件。
+            // 插件目录由登记表按插件填(不在这里传),这里只给配置。
+            var ctx = new PluginConfig(path, root.Clone());
             if (!plugins.TryResolve<DRGX.His.IHisConnector>(connectorKey, ctx, out var connector) || connector is null)
             {
                 var available = plugins.KeysOf<DRGX.His.IHisConnector>();
@@ -105,7 +106,11 @@ internal static class RuntimeLoader
         }
     }
 
-    /// <summary>费用算法:全部来自插件登记表。没有任何算法插件时不报错,只提示 —— 分组仍可用。</summary>
+    /// <summary>费用算法:全部来自插件登记表。没有任何算法插件时不报错,只提示 —— 分组仍可用。
+    ///
+    /// <para>与 HIS 连接器走**同一条**解析路径,唯一差别是配置:<see cref="PluginConfig.None"/> ——
+    /// 费用算法的参数全部来自地区费用包,没有插件级配置文件。这个差别是一条口径,不是漏接线。</para>
+    /// </summary>
     public static DRGX.Fee.FeeAlgorithmRegistry LoadFeeAlgorithms(PluginRegistrar plugins)
     {
         var registry = new DRGX.Fee.FeeAlgorithmRegistry();
@@ -113,7 +118,7 @@ internal static class RuntimeLoader
         {
             try
             {
-                if (plugins.TryResolve<DRGX.Fee.IFeeAlgorithm>(id, PluginRegistrar.NoContext, out var algo) && algo is not null)
+                if (plugins.TryResolve<DRGX.Fee.IFeeAlgorithm>(id, PluginConfig.None, out var algo) && algo is not null)
                     registry.Register(algo);
             }
             catch (Exception ex)

@@ -32,9 +32,9 @@ REM  prerequisite while they believe they asked for none. Never let that flag
 REM  change meaning again.
 REM
 REM  VERSIONS -- three labels, deliberately different, do not conflate them
-REM    program version   1.0.0
-REM        Names the release folder and its archive -- dist\drgx-1.0.0-standalone\
-REM        or dist\drgx-1.0.0-fdd\, plus the .zip next to each.
+REM    program version   1.1.0
+REM        Names the release folder and its archive -- dist\drgx-1.1.0-standalone\
+REM        or dist\drgx-1.1.0-fdd\, plus the .zip next to each.
 REM        Declared here as PKG_VER, mirrored in package.json, and pinned for
 REM        the assemblies in Directory.Build.props. Bump it whenever the
 REM        software changes -- it tracks the code, not the data.
@@ -215,7 +215,7 @@ REM This is the PROGRAM version. It is NOT the CHS-DRG scheme version: that one
 REM is 3.0, it lives in data\packs\<pack>\manifest.json, and it is what the UI
 REM shows (via /api/info). Keep this in step with package.json. The assemblies
 REM carry a version of their own, declared in Directory.Build.props.
-set "PKG_VER=1.0.0"
+set "PKG_VER=1.1.0"
 set "SKIP_BUILD="
 set "NO_ZIP="
 set "NO_SMOKE="

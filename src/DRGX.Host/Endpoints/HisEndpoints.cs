@@ -140,8 +140,7 @@ internal static class HisEndpoints
                 excludedComplications = outcome.ExcludedComplications,
                 trace = outcome.Trace,
                 fee = FeeJoin.FeeInfo(outcome.Code, rp),
-                grouping = FeeJoin.WithFee(BatchParsing.OutcomeRow(1, summary, outcome,
-                    drgDirect: svc.ResolveDrgDirect(outcome, record, system)), rp),
+                grouping = FeeJoin.WithFee(BatchParsing.OutcomeRow(1, summary, outcome), rp),
             });
         });
 
@@ -177,8 +176,9 @@ internal static class HisEndpoints
                 return FetchFailed(ex);
             }
 
-            // 与文件批量路径同构:产出 BatchRow、共用同一套明细预算与同一张结果表。
+            // 与文件批量路径同构:产出 BatchRow、共用同一份逐行装配配方(BatchRun)。
             // (曾经这里是匿名对象,前端还得做一次字段搬运;类型统一后两路结果在界面上完全一致。)
+            var run = new BatchRun(svc, system, rp);
             var rows = new List<BatchRow>(ids.Count);
             int ok = 0, fail = 0;
             foreach (var id in ids)
@@ -186,8 +186,7 @@ internal static class HisEndpoints
                 string? error = null;
                 string? summary = id;
                 DRGX.His.HisMedicalRecord? rec = null;
-                MedicalRecord? mrec = null; // 供分组后按病案判定直赋档(HIS 批量与单条同口径)
-                GroupOutcome? outcome = null;
+                MedicalRecord? record = null;   // 供分组与结果行的病案明细列(WithCase)
                 try
                 {
                     rec = his.FetchRecord(id);
@@ -208,7 +207,7 @@ internal static class HisEndpoints
                     else if (rec.Diagnoses.Count == 0) error = "无诊断编码,无法分组";
                     else
                     {
-                        var record = new MedicalRecord
+                        record = new MedicalRecord
                         {
                             Index = svc.NextIndex("H"),
                             Gender = gender,
@@ -219,34 +218,25 @@ internal static class HisEndpoints
                             Diagnoses = rec.Diagnoses.Select(d => d.Icd).ToList(),
                             Procedures = rec.Operations.Select(o => o.Icd).ToList(),
                         };
-                        mrec = record;
-                        outcome = svc.Engine.Group(record, new GroupingOptions
-                        {
-                            Trace = true,
-                            CodeSystem = system,
-                        });
                     }
                 }
+
+                // 就诊号已在 PatientId 里;姓名从 HIS 病案带出(界面上唯一会显示姓名的地方,
+                // 屏幕过脱敏开关);HIS 连接器未取证件号,留 null。
+                var ids0 = new RowIds(PatientName: rec?.Name);
 
                 if (error is not null)
                 {
                     fail++;
                     // 错误行不带明细(没有分组结果可看),与文件路径的解析失败行同形状
-                    rows.Add(new BatchRow(rows.Count + 1, summary, PatientId: id, Error: error));
+                    rows.Add(BatchRun.ErrorRow(rows.Count + 1, summary, error, ids0, patientId: id));
                 }
                 else
                 {
                     ok++;
                     // HIS 总费用随行透传(对账用),与文件路径的差别只剩这一个字段
-                    var row = FeeJoin.WithFee(BatchParsing.OutcomeRow(rows.Count + 1, summary, outcome!,
-                        patientId: id,
-                        drgDirect: svc.ResolveDrgDirect(outcome!, mrec!, system)), rp)
-                        with { Fee = rec?.TotalFee };
-                    // 姓名从 HIS 病案带出(界面上唯一会显示姓名的地方,屏幕过脱敏开关)。
-                    // 就诊号已在 PatientId 里,故不再重复填病案号;HIS 连接器未取证件号,留 null。
-                    rows.Add(BatchParsing.TrimDetail(row.WithCase(mrec!)
-                        .WithIds(null, null, null, null, rec?.Name, null)
-                        .WithFeeEstimate(svc, rp, null, null)));
+                    rows.Add(run.GroupedRow(rows.Count + 1, summary, record!, ids0,
+                        patientId: id, totalFee: rec?.TotalFee).Row);
                 }
             }
             return Results.Ok(new { connector = his.ConnectorId, from, to, count = ids.Count, ok, fail, rows });

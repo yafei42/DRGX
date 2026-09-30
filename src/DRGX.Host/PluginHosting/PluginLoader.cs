@@ -52,6 +52,10 @@ internal static class PluginLoader
                 continue;
             }
 
+            // 这个插件登记的能力都归属它自己的目录 —— 解析时由登记表填进
+            // PluginContext.PluginDirectory,插件因此总能读到同目录的附属资源。
+            registrar.CurrentPluginDirectory = dir;
+
             PluginLoadContext context;
             Assembly assembly;
             try

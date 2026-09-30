@@ -38,60 +38,14 @@ internal sealed class WebApp
     /// <summary>
     /// ADRG 入组明细:由数据包运行时派生(rules 内 ADRG 的 origin + 码表规模),
     /// 不再依赖随包分发的 adrg-info.json。构造期随快照一并派生。
+    ///
+    /// <para>只承载**展示增强**信息(ADRG 名、所属 MDC 名、"可入 N 种"的码数)。
+    /// 判定结论(官方入组条件原文、分档、直赋档)一律随 <see cref="DRGX.Engine.GroupOutcome"/>
+    /// 下发,本表不再参与任何判定。</para>
     /// </summary>
     public Dictionary<string, AdrgInfo> AdrgInfo => _adrgInfo;
     private readonly Dictionary<string, AdrgInfo> _adrgInfo;
-    /// <summary>DRG 细分组条件原文(DRG码 → rules 内 split.origin,合并症等级/年龄属性/特殊入组条件三列综合)。
-    /// 前端分组结果「条件原文」直接取用;构造期随快照一并派生。</summary>
-    public Dictionary<string, string> DrgOrigin => _drgOrigin;
-    private readonly Dictionary<string, string> _drgOrigin;
 
-    /// <summary>DRG 码 → 直赋档规则(高危妊娠直赋/机器人直赋):落位由特殊身份条件决定
-    /// (高危妊娠码表/机器人辅助手术清单),与合并症分档无关。前端"DRG 细分组落位(…)"标题
-    /// 据此替代 MCC/CC 推断文案(直赋档 0 MCC/0 CC 时按计数会误标"不伴并发症")。</summary>
-    public Dictionary<string, DrgDirectRule> DrgDirect => _drgDirect;
-    private readonly Dictionary<string, DrgDirectRule> _drgDirect;
-
-    /// <summary><see cref="ResolveDrgDirect(string?, string, IReadOnlyList{string})"/> 的病案级重载:
-    /// 先按所选编码版本把主诊断与全部手术操作码规范化到医保版(与引擎 Normalize 同口径),再判定。
-    /// 单病例/文件批量/HIS 三条路径共用,口径唯一。</summary>
-    public string? ResolveDrgDirect(GroupOutcome outcome, MedicalRecord rec, CodeSystem system)
-    {
-        var pack = Pack; // 经委托取包(单一入口)
-        var withMap = system == CodeSystem.Guolin; // 医保版输入不做任何转换
-        var main = rec.Diagnoses.Count > 0 ? rec.Diagnoses[0] : "";
-        var directMain = withMap && pack.DiagnosisMap.TryGetValue(main, out var mappedMain) ? mappedMain : main;
-        var directProcs = withMap
-            ? rec.Procedures.Select(p => pack.ProcedureMap.TryGetValue(p, out var mp) ? mp : p).ToList()
-            : (IReadOnlyList<string>)rec.Procedures;
-        return ResolveDrgDirect(outcome.Code, directMain, directProcs);
-    }
-
-    /// <summary>请求期判定直赋档:落位 DRG 属直赋档、且该病例确实命中其特殊身份条件时返回说明,否则 null
-    /// (前端回退 MCC/CC 推断文案)。判定只认规则条件,与是否同时有 MCC 无关
-    /// ——官方口径:"主诊断在 811 清单内时直接定 OB11/OB21,不再核对合并症"。
-    /// 与数据包同源:rules 内 OB11/OB21 的 when 为 any[mainDiagnosisIn, hasMcc],直赋条件已置首
-    /// (首中语义即优先级),此处复核的 Probe 就是 when 里那个 mainDiagnosisIn 节点。
-    /// 顺序护栏:直赋条件须置于 when 的 any 首位(原由 tools/check_direct_priority.py 校验,
-    /// 该工具链未随本仓库发布,改动 rules 时须人工复核此顺序)。
-    /// 必须复核而非按落位码静态下发:同一 DRG 常有多条落位路径(纯 MCC 也能落 OB11/OB21),
-    /// 静态下发会把常规分档误标成直赋。</summary>
-    /// <param name="code">落位 DRG 码。</param>
-    /// <param name="mainDiagnosis">已按编码版本规范化(映射后)的主要诊断码。</param>
-    /// <param name="procedures">已按编码版本规范化(映射后)的全部手术操作码。</param>
-    public string? ResolveDrgDirect(string? code, string mainDiagnosis, IReadOnlyList<string> procedures)
-    {
-        if (string.IsNullOrEmpty(code)) return null;
-        if (!DrgDirect.TryGetValue(code, out var rule)) return null;
-        // 一律按规则条件判定,不看合并症:机器人辅助看触发码表(与 GrouperEngine 同源的
-        // 官方 OP_ARB 集合),高危妊娠看 split 内 mainDiagnosisIn 的 811 清单。
-        return rule.Kind switch
-        {
-            DrgDirectKind.Robot => procedures.Any(p => Pack.RobotProcedures.Contains(p)) ? rule.Label : null,
-            DrgDirectKind.HighRisk => rule.Probe is not null && rule.Probe.CodeSet.Contains(mainDiagnosis) ? rule.Label : null,
-            _ => null,
-        };
-    }
     /// <summary>基层病组(支付/管理口径的 DRG 子集)清单:随包根码表 <c>primary-groups.csv</c>
     /// 加载(见 <see cref="DataPack.PrimaryGroups"/>),缺失即空表。仅用于分组结果标注,不影响分组判定。</summary>
     public IReadOnlyList<PrimaryGroupInfo> PrimaryGroups => _runtime.Pack.PrimaryGroups;
@@ -109,8 +63,6 @@ internal sealed class WebApp
         PackPath = packPath;
         _runtime = PackRuntime.Load(packPath);
         _adrgInfo = PackIndexes.BuildAdrgInfo(_runtime.Pack);
-        _drgOrigin = PackIndexes.BuildDrgOrigin(_runtime.Pack);
-        _drgDirect = PackIndexes.BuildDrgDirect(_runtime.Pack);
         FeeAlgorithms = RuntimeLoader.LoadFeeAlgorithms(plugins);
         RegionsRoot = WebPaths.Resolve(regionsRootArg ?? "data/regions", packPath);
         FeeRegions = RuntimeLoader.LoadFeeRegions(RegionsRoot);

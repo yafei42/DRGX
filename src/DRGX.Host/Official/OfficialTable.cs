@@ -3,12 +3,12 @@
 namespace DRGX.Host;
 
 // ============================================================================
-// OfficialTable — 官方配置表的可浏览清单与只读取值
+// OfficialTable — 官方配置表的可浏览清单
 //
 // 「数据一览」页的数据源是官方发布的**分组方案配置信息工作簿**(<pack>/official/*.xlsx),
-// 由 DRGX.Engine 的 OfficialWorkbook 在装载期解析成 7 张表。本模块只做两件事:
-//   1. 描述每张表的**列口径**(中文列头、格式、外键下钻目标) —— 这是界面层的知识;
-//   2. 把表 id 映射到已解析的内存表,不重复解析、不二次派生。
+// 由 DRGX.Engine 的 OfficialWorkbook 在装载期解析成 7 张表。本模块只做一件事:
+// 描述每张表的**列口径**(中文列头、格式、外键下钻目标) —— 这是界面层的知识。
+// 读工作簿(取表 / 表源说明 / 集合编号)不在这里,归 OfficialPackView。
 //
 // 取值口径与官方工作簿逐格对应:列名即工作簿列头规范化后的键,行序即工作簿行序(主干表另按
 // 官方「排序」列),不补区域费用 join、不重命名、不重排。列数即工作簿该 sheet 的列数。
@@ -116,26 +116,9 @@ internal static class OfficialTable
         string.IsNullOrEmpty(id) ? null : All.FirstOrDefault(d => string.Equals(d.Id, id, StringComparison.OrdinalIgnoreCase));
 
     // ------------------------------ 取值 ------------------------------
-
-    /// <summary>
-    /// 取一张官方表。解析已由 <see cref="OfficialWorkbook"/> 在装载期完成并缓存,此处只做 id → 表的映射
-    /// （工作簿或登记文件变更时缓存自动失效,重读后无需重启服务）。
-    /// </summary>
-    public static OfficialTableData Load(string dir, OfficialTableDef def) => OfficialWorkbook.Load(dir).Table(def.Id);
-
-    /// <summary>该表的来源说明(官方工作簿文件名 · sheet 名),界面「表源」标注用。</summary>
-    public static string SourceOf(string dir, string id) => OfficialWorkbook.Load(dir).SourceOf(id);
-
-    /// <summary>官方工作簿文件名(表源说明的前缀)。</summary>
-    public static string WorkbookName(string dir) => OfficialWorkbook.Load(dir).FileName;
-
-    /// <summary>官方集合编号集合(dsl 列的下钻判定依据)。</summary>
-    public static IReadOnlyCollection<string> SetIds(string dir)
-    {
-        var table = Load(dir, ById("csindex")!);
-        var ci = table.IndexOf("set_id");
-        if (ci < 0) return Array.Empty<string>();
-        return table.Rows.Select(r => r[ci]).Where(s => s.Length > 0)
-            .Distinct(StringComparer.Ordinal).OrderBy(s => s, StringComparer.Ordinal).ToArray();
-    }
+    // 这里**不再**有取表 / 表源说明 / 集合编号的转发。那三件事一度是本类的一行转发
+    // （Load / SourceOf / WorkbookName → OfficialWorkbook.Load(dir).X），既让"读工作簿"有了
+    // 两个入口，又逼调用点写出 OfficialTable.ById("mdc")! 这种先断言再传 def 的形状。
+    // 现在「读工作簿」只有一个入口:OfficialPackView 打开视图时把工作簿握在手里,
+    // 表源说明与集合编号都是它对自己那本工作簿的回答。本类只回答"有哪些表、表长什么样"。
 }
